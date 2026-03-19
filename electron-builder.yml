@@ -1,0 +1,26 @@
+appId: com.diplomen.restclient
+productName: REST Client
+directories:
+  output: dist
+files:
+  - out/**/*
+  - package.json
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!backend/*"
+  - "!electron.vite.config.{js,ts,mjs,cjs}"
+  - "!{.eslintignore,.eslintrc*,.prettier*,tsconfig*.json}"
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  executableName: REST-Client
+nsis:
+  artifactName: ${productName}-${version}-Setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  allowToChangeInstallationDirectory: true
+  oneClick: false

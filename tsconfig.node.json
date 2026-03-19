@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "lib": ["ES2021", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node", "electron"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": "."
+  },
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+}
