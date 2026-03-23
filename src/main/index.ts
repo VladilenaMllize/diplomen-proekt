@@ -412,21 +412,29 @@ const registerIpc = () => {
         const r = results[j]
         if (r?.response) stepResults.set(j + 1, r.response)
       }
-      const path = substituteVariables(step.path, stepResults)
-      const headers = substituteHeaders(step.headers, stepResults)
-      const body = step.body ? substituteVariables(step.body, stepResults) : undefined
-      const response = await executeRequest(
-        device,
-        {
-          deviceId: device.id,
-          method: step.method,
-          path,
-          headers,
-          body
-        },
-        true
-      )
-      results.push({ stepId: step.id, response })
+      try {
+        const path = substituteVariables(step.path, stepResults)
+        const headers = substituteHeaders(step.headers, stepResults)
+        const body = step.body ? substituteVariables(step.body, stepResults) : undefined
+        const response = await executeRequest(
+          device,
+          {
+            deviceId: device.id,
+            method: step.method,
+            path,
+            headers,
+            body
+          },
+          true
+        )
+        results.push({ stepId: step.id, stepName: step.name, response })
+      } catch (err) {
+        results.push({
+          stepId: step.id,
+          stepName: step.name,
+          error: err instanceof Error ? err.message : 'Unknown error'
+        })
+      }
 
       if (step.delayMs && step.delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, step.delayMs))

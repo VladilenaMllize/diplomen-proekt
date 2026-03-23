@@ -1,10 +1,10 @@
 import { Router } from 'express'
-import { sensors } from '../data.js'
+import { getAllSensors, upsertSensor } from '../db/index.js'
 
 const router = Router()
 
 router.get('/', (_req, res) => {
-  res.json(sensors)
+  res.json(getAllSensors())
 })
 
 router.post('/', (req, res) => {
@@ -13,20 +13,10 @@ router.post('/', (req, res) => {
     res.status(400).json({ error: 'Invalid body: id required' })
     return
   }
-  const existing = sensors.find((s) => s.id === body.id)
-  if (existing) {
-    if (typeof body.value === 'number') existing.value = body.value
-    if (body.unit !== undefined) existing.unit = body.unit
-    res.json(existing)
-  } else {
-    const sensor = {
-      id: body.id,
-      value: typeof body.value === 'number' ? body.value : 0,
-      unit: body.unit
-    }
-    sensors.push(sensor)
-    res.status(201).json(sensor)
-  }
+  const id = body.id as string
+  const existed = getAllSensors().some((s) => s.id === id)
+  const sensor = upsertSensor({ id, value: body.value, unit: body.unit })
+  res.status(existed ? 200 : 201).json(sensor)
 })
 
 export { router as sensorsRouter }

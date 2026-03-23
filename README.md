@@ -61,6 +61,22 @@ npm run dist
 
 Backend **не** е част от пакета – за demo го стартирай отделно с `npm run backend`.
 
+## Тестване на Backend API
+
+**PowerShell** (препоръчително за Windows):
+```powershell
+cd backend
+.\test-api.ps1
+```
+
+Ръчно с `Invoke-RestMethod`:
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/sensors" -Method Get
+Invoke-RestMethod -Uri "http://localhost:3000/config" -Method Put -Body '{"name":"My Hub","version":"2.0"}' -ContentType "application/json"
+```
+
+**Забележка:** В PowerShell `curl` е alias за `Invoke-WebRequest` – синтаксисът е различен. За истински curl използвай `curl.exe` и внимавай с кавичките в JSON.
+
 ## Backend API (Mock Sensor Hub)
 
 | Method | Path       | Описание                  |
@@ -72,6 +88,7 @@ Backend **не** е част от пакета – за demo го стартир
 | PUT    | `/config`  | Обновяване на конфигурация |
 
 ## Бележки
-- Данните се съхраняват локално в `appData` директорията на Electron.
+- **REST Client:** Данните (устройства, макроси, история) се съхраняват локално в `appData` директорията на Electron.
+- **Backend:** Сензорите и конфигурацията се съхраняват в SQLite база данни (`backend/data/sensors.db`) – данните се запазват между рестарти.
 - Приложението е изградено с Electron + React + TypeScript + Tailwind.
-- Backend използва Node.js + Express + TypeScript.
+- Backend използва Node.js + Express + TypeScript + SQLite (better-sqlite3).

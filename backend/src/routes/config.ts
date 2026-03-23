@@ -1,16 +1,18 @@
 import { Router } from 'express'
-import { config } from '../data.js'
+import { getConfig, updateConfig } from '../db/index.js'
 
 const router = Router()
 
 router.get('/', (_req, res) => {
-  res.json(config)
+  res.json(getConfig())
 })
 
 router.put('/', (req, res) => {
   const body = req.body as { name?: string; version?: string }
-  if (body?.name !== undefined) config.name = String(body.name)
-  if (body?.version !== undefined) config.version = String(body.version)
+  const config = updateConfig({
+    name: body?.name !== undefined ? String(body.name) : undefined,
+    version: body?.version !== undefined ? String(body.version) : undefined
+  })
   res.json(config)
 })
 

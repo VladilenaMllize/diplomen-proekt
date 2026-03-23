@@ -420,8 +420,8 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900">
-      <aside className="w-80 border-r border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <aside className="flex w-80 flex-col overflow-hidden border-r border-slate-200 bg-white">
+        <div className="shrink-0 flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div>
             <h1 className="text-lg font-semibold">REST API Устройства</h1>
             <p className="text-xs text-slate-500">Desktop REST Client</p>
@@ -434,7 +434,7 @@ export default function App() {
           </button>
         </div>
 
-        <div className="px-4 py-3">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-700">Устройства</h2>
             <div className="flex gap-1">
@@ -514,7 +514,7 @@ export default function App() {
           <TabButton label="Макроси" active={activeTab === 'macros'} onClick={() => setActiveTab('macros')} />
         </header>
 
-        <section className="flex-1 overflow-hidden p-6">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
           {activeTab === 'request' && (
             <RequestPanel
               device={selectedDevice}
@@ -835,9 +835,9 @@ const RequestPanel = ({
     : '—'
 
   return (
-    <div className="grid h-full grid-cols-[1.1fr_1fr] gap-6">
-      <div className="rounded border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-700">HTTP заявка</h2>
+    <div className="grid min-h-0 flex-1 grid-cols-[1.1fr_1fr] gap-6">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
+        <h2 className="shrink-0 text-sm font-semibold text-slate-700">HTTP заявка</h2>
         <p className="mt-1 text-xs text-slate-500">Base URL: {baseUrl}</p>
 
         {!device && (
@@ -1087,9 +1087,9 @@ const HistoryPanel = ({
   }, [history, filterMethod, filterPath, filterStatus])
 
   return (
-  <div className="grid h-full grid-cols-[1fr_1.1fr] gap-6">
-    <div className="rounded border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between">
+  <div className="grid min-h-0 flex-1 grid-cols-[1fr_1.1fr] gap-6">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
+      <div className="shrink-0 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-700">История</h2>
         <button
           className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
@@ -1099,7 +1099,7 @@ const HistoryPanel = ({
         </button>
       </div>
 
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 shrink-0 space-y-2">
         <div className="grid grid-cols-3 gap-1">
           <input
             className="rounded border border-slate-200 px-2 py-1 text-[11px]"
@@ -1124,7 +1124,7 @@ const HistoryPanel = ({
         </div>
       </div>
 
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
         {filteredHistory.length === 0 && (
           <div className="text-xs text-slate-500">
             {history.length === 0 ? 'Историята е празна.' : 'Няма резултати за филтъра.'}
@@ -1153,8 +1153,8 @@ const HistoryPanel = ({
       </div>
     </div>
 
-    <div className="rounded border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
+      <div className="shrink-0 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-700">Детайли</h2>
         {selectedEntry && devices.some((d) => d.id === selectedEntry.deviceId) && (
           <button
@@ -1171,7 +1171,7 @@ const HistoryPanel = ({
         </div>
       )}
       {selectedEntry && (
-        <div className="mt-4 space-y-3 text-xs">
+        <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto text-xs">
           <div>
             <div className="text-[11px] font-semibold text-slate-500">URL</div>
             <div className="mt-1 rounded border border-slate-200 bg-slate-50 px-2 py-1">
@@ -1233,14 +1233,22 @@ const MacroPanel = ({
     macroToForm(macro, devices[0]?.id ?? '')
   )
   const [formError, setFormError] = useState<string | null>(null)
+  const [showFolderForm, setShowFolderForm] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
+  const [editingFolderName, setEditingFolderName] = useState('')
 
   useEffect(() => {
     setForm(macroToForm(macro, devices[0]?.id ?? ''))
   }, [macro?.id, devices])
 
-  const handleNewFolder = () => {
-    const name = window.prompt('Име на папка', 'Нова папка')
-    if (name?.trim()) onCreateFolder(name.trim())
+  const handleCreateFolder = () => {
+    const name = newFolderName.trim()
+    if (name) {
+      onCreateFolder(name)
+      setNewFolderName('')
+      setShowFolderForm(false)
+    }
   }
 
   const uncategorized = macros.filter((m) => !m.folderId)
@@ -1297,8 +1305,8 @@ const MacroPanel = ({
   }
 
   return (
-    <div className="grid h-full grid-cols-[260px_1fr] gap-6">
-      <div className="rounded border border-slate-200 bg-white p-4">
+    <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr] gap-6">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Макроси</h2>
           <div className="flex gap-1">
@@ -1309,13 +1317,39 @@ const MacroPanel = ({
               Нов
             </button>
             <button
-              className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
-              onClick={handleNewFolder}
+              className="rounded border border-emerald-500 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+              onClick={() => setShowFolderForm((v) => !v)}
             >
-              Папка
+              Make a folder
             </button>
           </div>
         </div>
+        {showFolderForm && (
+          <div className="mt-3 flex gap-2 rounded border border-slate-200 bg-slate-50 p-2">
+            <input
+              className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-xs"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="Име на папка"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateFolder()
+                if (e.key === 'Escape') setShowFolderForm(false)
+              }}
+            />
+            <button
+              className="shrink-0 rounded bg-emerald-500 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600"
+              onClick={handleCreateFolder}
+            >
+              Създай
+            </button>
+            <button
+              className="shrink-0 rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+              onClick={() => setShowFolderForm(false)}
+            >
+              Отказ
+            </button>
+          </div>
+        )}
         <div className="mt-3 max-h-[360px] space-y-3 overflow-y-auto">
           {macros.length === 0 && (
             <div className="text-xs text-slate-500">Няма макроси.</div>
@@ -1341,27 +1375,60 @@ const MacroPanel = ({
           )}
           {macrosByFolder.map(({ folder, macros: folderMacros }) => (
               <div key={folder.id}>
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-slate-500">{folder.name}</span>
-                  <div className="flex gap-0.5">
-                    <button
-                      className="rounded px-1 text-[10px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                      onClick={() => {
-                        const n = window.prompt('Преименувай', folder.name)
-                        if (n?.trim()) onUpdateFolder(folder.id, n.trim())
-                      }}
-                      title="Преименувай"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="rounded px-1 text-[10px] text-rose-400 hover:bg-rose-50"
-                      onClick={() => onRemoveFolder(folder.id)}
-                      title="Изтрий папка"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  {editingFolderId === folder.id ? (
+                    <div className="flex min-w-0 flex-1 items-center gap-1">
+                      <input
+                        className="min-w-0 flex-1 rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
+                        value={editingFolderName}
+                        onChange={(e) => setEditingFolderName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            if (editingFolderName.trim()) {
+                              onUpdateFolder(folder.id, editingFolderName.trim())
+                              setEditingFolderId(null)
+                            }
+                          }
+                          if (e.key === 'Escape') setEditingFolderId(null)
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        className="shrink-0 rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white hover:bg-emerald-600"
+                        onClick={() => {
+                          if (editingFolderName.trim()) {
+                            onUpdateFolder(folder.id, editingFolderName.trim())
+                            setEditingFolderId(null)
+                          }
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="truncate text-[11px] font-medium text-slate-500">{folder.name}</span>
+                      <div className="flex shrink-0 gap-0.5">
+                        <button
+                          className="rounded px-1 text-[10px] text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                          onClick={() => {
+                            setEditingFolderId(folder.id)
+                            setEditingFolderName(folder.name)
+                          }}
+                          title="Преименувай"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="rounded px-1 text-[10px] text-rose-400 hover:bg-rose-50"
+                          onClick={() => onRemoveFolder(folder.id)}
+                          title="Изтрий папка"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="space-y-2">
                   {folderMacros.map((item) => (
@@ -1382,8 +1449,8 @@ const MacroPanel = ({
         </div>
       </div>
 
-      <div className="rounded border border-slate-200 bg-white p-4">
-        <div className="flex items-center justify-between">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
+        <div className="shrink-0 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700">Конфигурация</h2>
           {macro && (
             <button
@@ -1395,7 +1462,7 @@ const MacroPanel = ({
           )}
         </div>
 
-        <div className="mt-3 space-y-3 text-xs">
+        <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto text-xs">
           <div className="grid grid-cols-2 gap-2">
             <input
               className="rounded border border-slate-200 px-2 py-1"
@@ -1524,16 +1591,64 @@ const MacroPanel = ({
 
           {runResult && (
             <div className="rounded border border-slate-200 bg-slate-50 p-3 text-xs">
-              <div className="font-semibold text-slate-600">Резултат</div>
-              <div className="mt-2 space-y-2">
-                {runResult.results.map((result) => (
-                  <div key={result.stepId} className="rounded border border-slate-200 bg-white p-2">
-                    <div className="text-[11px] text-slate-500">Step: {result.stepId}</div>
-                    <div className="font-medium">
-                      {result.response?.status ?? result.error ?? 'ERR'}
+              <div className="font-semibold text-slate-600">
+                Резултат ({runResult.results.length} стъпки,{' '}
+                {runResult.finishedAt - runResult.startedAt} ms)
+              </div>
+              <div className="mt-2 space-y-3">
+                {runResult.results.map((result, idx) => {
+                  const isError = !!result.error || (result.response?.status ?? 0) >= 400
+                  return (
+                    <div
+                      key={result.stepId}
+                      className={`rounded border p-3 ${
+                        isError ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-700">
+                          {result.stepName || `Стъпка ${idx + 1}`}
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                            isError ? 'bg-rose-200 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {result.response != null
+                            ? `${result.response.status} ${result.response.statusText}`
+                            : 'ERR'}
+                        </span>
+                      </div>
+                      {result.response?.durationMs != null && (
+                        <div className="mt-1 text-[11px] text-slate-500">
+                          Време: {result.response.durationMs} ms
+                        </div>
+                      )}
+                      {result.error && (
+                        <div className="mt-2 rounded border border-rose-200 bg-white p-2 text-[11px] text-rose-700">
+                          <strong>Грешка:</strong> {result.error}
+                        </div>
+                      )}
+                      {result.response?.error && (
+                        <div className="mt-2 rounded border border-rose-200 bg-white p-2 text-[11px] text-rose-700">
+                          <strong>Съобщение:</strong> {result.response.error}
+                        </div>
+                      )}
+                      {result.response?.body && result.response.body.length > 0 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-[11px] text-slate-500 hover:text-slate-700">
+                            Body ({result.response.body.length} символа)
+                          </summary>
+                          <pre className="mt-1 max-h-32 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-[11px]">
+                            {result.response.body.length > 500
+                              ? result.response.body.slice(0, 500) + '...'
+                              : result.response.body}
+                          </pre>
+                        </details>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

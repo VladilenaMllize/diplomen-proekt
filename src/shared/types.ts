@@ -124,6 +124,7 @@ export interface MacroRunResult {
   finishedAt: number
   results: Array<{
     stepId: string
+    stepName?: string
     response?: ResponseData
     error?: string
   }>
