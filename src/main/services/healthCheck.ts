@@ -46,33 +46,35 @@ export class HealthCheckManager {
       return
     }
 
-    const healthPath = device.healthCheck?.path?.trim() || '/health'
-    const timeoutMs = device.healthCheck?.timeoutMs ?? DEFAULT_TIMEOUT_MS
-
     this.running.add(device.id)
+    try {
+      const healthPath = device.healthCheck?.path?.trim() || '/health'
+      const timeoutMs = device.healthCheck?.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
-    const headers = buildRequestHeaders(undefined, device.auth)
-    const url = buildUrl(device, healthPath)
-    const response = await sendHttpRequest({
-      url,
-      method: 'GET',
-      headers,
-      timeoutMs
-    })
+      const headers = buildRequestHeaders(undefined, device.auth)
+      const url = buildUrl(device, healthPath)
+      const response = await sendHttpRequest({
+        url,
+        method: 'GET',
+        headers,
+        timeoutMs
+      })
 
-    const status: DeviceStatus = {
-      state: response.error
-        ? 'offline'
-        : response.status >= 200 && response.status < 400
-          ? 'online'
-          : 'offline',
-      lastCheckedAt: Date.now(),
-      latencyMs: response.durationMs,
-      statusCode: response.status,
-      error: response.error
+      const status: DeviceStatus = {
+        state: response.error
+          ? 'offline'
+          : response.status >= 200 && response.status < 400
+            ? 'online'
+            : 'offline',
+        lastCheckedAt: Date.now(),
+        latencyMs: response.durationMs,
+        statusCode: response.status,
+        error: response.error
+      }
+
+      this.onUpdate(device.id, status)
+    } finally {
+      this.running.delete(device.id)
     }
-
-    this.onUpdate(device.id, status)
-    this.running.delete(device.id)
   }
 }

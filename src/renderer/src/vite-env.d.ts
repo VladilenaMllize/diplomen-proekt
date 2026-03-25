@@ -18,6 +18,7 @@ declare global {
   interface Window {
     api: {
       getState: () => Promise<Store>
+      getStoreLoadError: () => Promise<string | null>
       exportConfig: () => Promise<{ ok: boolean }>
       importConfig: () => Promise<{ ok: boolean; error: string | null }>
       saveDevice: (input: DeviceInput) => Promise<Device>

@@ -241,9 +241,11 @@ export default function App() {
   const [lastResponse, setLastResponse] = useState<ResponseData | null>(null)
   const [macroRun, setMacroRun] = useState<MacroRunResult | null>(null)
   const [sending, setSending] = useState(false)
+  const [requestSendError, setRequestSendError] = useState<string | null>(null)
   const [macroError, setMacroError] = useState<string | null>(null)
   const [historySelection, setHistorySelection] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [startupLoadError, setStartupLoadError] = useState<string | null>(null)
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.id === selectedDeviceId) ?? null,
@@ -291,6 +293,14 @@ export default function App() {
 
   useEffect(() => {
     if (!window.api) return
+    void (async () => {
+      const err = await window.api.getStoreLoadError()
+      if (err) setStartupLoadError(err)
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!window.api) return
     
     const unsubscribe = window.api.onDeviceStatus((update) => {
       setDevices((prev) =>
@@ -317,10 +327,16 @@ export default function App() {
   const handleSendRequest = async (request: RequestOptions) => {
     setSending(true)
     setLastResponse(null)
-    const response = await window.api.sendRequest(request)
-    setLastResponse(response)
-    setSending(false)
-    await loadState()
+    setRequestSendError(null)
+    try {
+      const response = await window.api.sendRequest(request)
+      setLastResponse(response)
+      await loadState()
+    } catch (error) {
+      setRequestSendError(error instanceof Error ? error.message : 'Грешка при изпращане')
+    } finally {
+      setSending(false)
+    }
   }
 
   const handleClearHistory = async () => {
@@ -452,6 +468,11 @@ export default function App() {
               </button>
             </div>
           </div>
+          {startupLoadError && (
+            <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+              {startupLoadError}
+            </div>
+          )}
           {importError && (
             <div className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-600">
               {importError}
@@ -519,6 +540,7 @@ export default function App() {
             <RequestPanel
               device={selectedDevice}
               sending={sending}
+              sendError={requestSendError}
               response={lastResponse}
               onSend={handleSendRequest}
             />
@@ -784,12 +806,14 @@ const RequestPanel = ({
   device,
   response,
   onSend,
-  sending
+  sending,
+  sendError
 }: {
   device: Device | null
   response: ResponseData | null
   onSend: (request: RequestOptions) => void
   sending: boolean
+  sendError: string | null
 }) => {
   const [method, setMethod] = useState<HttpMethod>('GET')
   const [path, setPath] = useState('')
@@ -820,7 +844,7 @@ const RequestPanel = ({
 
     setError(null)
     const timeoutValue = Number(timeoutMs)
-    onSend({
+    void onSend({
       deviceId: device.id,
       method,
       path,
@@ -903,6 +927,7 @@ const RequestPanel = ({
             </div>
 
             {error && <div className="text-xs text-rose-500">{error}</div>}
+            {sendError && <div className="text-xs text-rose-500">{sendError}</div>}
           </div>
         )}
       </div>

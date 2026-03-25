@@ -14,6 +14,7 @@ import type {
 
 const api = {
   getState: (): Promise<Store> => ipcRenderer.invoke('app:getState'),
+  getStoreLoadError: (): Promise<string | null> => ipcRenderer.invoke('app:getStoreLoadError'),
   exportConfig: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:exportConfig'),
   importConfig: (): Promise<{ ok: boolean; error: string | null }> =>
     ipcRenderer.invoke('app:importConfig'),

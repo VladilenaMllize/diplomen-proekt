@@ -15,7 +15,7 @@ import type {
 } from '../shared/types'
 import { HealthCheckManager } from './services/healthCheck'
 import { buildRequestHeaders, buildUrl, redactHeaders, sendHttpRequest } from './services/httpClient'
-import { getStore, initStore, updateStore } from './services/storage'
+import { consumeStoreLoadError, getStore, initStore, updateStore } from './services/storage'
 
 const MAX_HISTORY = 200
 
@@ -199,6 +199,7 @@ const EXPORT_VERSION = 1
 
 const registerIpc = () => {
   ipcMain.handle('app:getState', () => getStore())
+  ipcMain.handle('app:getStoreLoadError', () => consumeStoreLoadError())
 
   ipcMain.handle('app:exportConfig', async () => {
     const store = getStore()
@@ -309,6 +310,7 @@ const registerIpc = () => {
   ipcMain.handle('devices:remove', async (_event, deviceId: string) => {
     await updateStore((store) => {
       store.devices = store.devices.filter((device) => device.id !== deviceId)
+      store.macros = store.macros.filter((macro) => macro.deviceId !== deviceId)
     })
     healthManager.sync(getStore().devices)
   })
@@ -373,12 +375,14 @@ const registerIpc = () => {
   })
 
   ipcMain.handle('folders:update', async (_event, id: string, name: string): Promise<MacroFolder | null> => {
-    const store = getStore()
-    const folder = store.folders.find((f) => f.id === id)
-    if (!folder) return null
-    folder.name = String(name ?? folder.name).trim() || folder.name
-    await updateStore(() => {})
-    return folder
+    let updated: MacroFolder | null = null
+    await updateStore((store) => {
+      const folder = store.folders.find((f) => f.id === id)
+      if (!folder) return
+      folder.name = String(name ?? folder.name).trim() || folder.name
+      updated = { id: folder.id, name: folder.name, parentId: folder.parentId }
+    })
+    return updated
   })
 
   ipcMain.handle('folders:remove', async (_event, id: string): Promise<void> => {
