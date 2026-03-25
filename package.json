@@ -15,7 +15,9 @@
     "dist:win": "npm run build:win",
     "dist:mac": "npm run build:mac",
     "preview": "electron-vite preview",
-    "lint": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit"
+    "lint": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "fast-xml-parser": "^4.5.3",
@@ -37,6 +39,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^4.1.1"
   }
 }
