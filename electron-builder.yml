@@ -10,6 +10,13 @@ files:
   - "!backend/*"
   - "!electron.vite.config.{js,ts,mjs,cjs}"
   - "!{.eslintignore,.eslintrc*,.prettier*,tsconfig*.json}"
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  hardenedRuntime: false
+  gatekeeperAssess: false
 win:
   signAndEditExecutable: false
   target:

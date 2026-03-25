@@ -51,13 +51,34 @@ npm run dev        # Терминал 2 – REST Client
 
 ## Пакетиране (Distribution)
 
+Инсталирай зависимости: `npm install`.
+
+**На текущата ОС** (препоръчително – на Windows се прави `.exe`, на macOS се прави `.app`/`.dmg`):
+
 ```bash
 npm run dist
 ```
 
-Генерира в `dist/`:
-- **REST Client-x.x.x-Setup.exe** – NSIS инсталатор
-- **REST Client x.x.x.exe** – portable изпълним файл (без инсталация)
+**Само Windows** (NSIS + portable `.exe`):
+
+```bash
+npm run dist:win
+```
+
+**Само macOS** (`.dmg` + `.zip` с приложението) – **задължително се изпълнява на Mac** (не може да се генерира валиден Mac пакет от Windows):
+
+```bash
+npm run dist:mac
+```
+
+Генерира в `dist/` (зависи от платформата):
+
+| Платформа | Артефакти |
+|-----------|-----------|
+| Windows | **REST Client-x.x.x-Setup.exe** (NSIS), **REST Client x.x.x.exe** (portable) |
+| macOS | **REST Client-x.x.x.dmg**, **REST Client-x.x.x-mac.zip** (или подобни имена) |
+
+На Mac, ако приложението не е подписано с Apple Developer ID, при първо отваряне може да е нужно: **десен бутон → Open** (или System Settings → Privacy & Security).
 
 Backend **не** е част от пакета – за demo го стартирай отделно с `npm run backend`.
 
