@@ -123,8 +123,8 @@ export function RequestPanel({
     : '—'
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[1.1fr_1fr] gap-6">
-      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+    <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[1.1fr_1fr] gap-6">
+      <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         <h2 className="shrink-0 text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'request.title')}</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
           {t(locale, 'request.baseUrl')}: {baseUrl}
@@ -356,8 +356,8 @@ export function ResponsePanel({ locale, response }: ResponsePanelProps) {
   const rawText = response?.body ?? '—'
 
   return (
-    <div className="rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'response.title')}</h2>
+    <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+      <h2 className="shrink-0 text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'response.title')}</h2>
       {!response && (
         <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
           {t(locale, 'response.none')}

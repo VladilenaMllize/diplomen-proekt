@@ -436,7 +436,7 @@ export default function App() {
   const loc = settings.locale
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex h-full min-h-0 bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <AppSidebar
         locale={loc}
         settings={settings}
@@ -473,8 +473,8 @@ export default function App() {
         onRemoveDevice={handleRemoveDevice}
       />
 
-      <main className="flex flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-900">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-900">
           <TabButton
             label={t(loc, 'tab.request')}
             active={activeTab === 'request'}

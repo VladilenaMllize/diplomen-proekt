@@ -76,7 +76,7 @@ export function AppSidebar({
   onRemoveDevice
 }: AppSidebarProps) {
   return (
-    <aside className="flex w-80 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+    <aside className="flex w-80 min-h-0 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
       <div className="shrink-0 flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div>
           <h1 className="text-lg font-semibold">{t(loc, 'app.title')}</h1>
