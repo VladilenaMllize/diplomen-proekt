@@ -2,6 +2,15 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
+import { THEME_PREF_KEY } from './lib/theme'
+
+try {
+  if (localStorage.getItem(THEME_PREF_KEY) === 'dark') {
+    document.documentElement.classList.add('dark')
+  }
+} catch {
+  /* private mode / denied */
+}
 
 class RenderErrorBoundary extends React.Component<
   { children: React.ReactNode },

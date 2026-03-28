@@ -63,6 +63,10 @@ export interface AppSettings {
   locale: LocaleCode
   /** App-wide template variables, e.g. {{token}}, {{baseUrl}} (not {{step1}}) */
   globalVariables: Record<string, string>
+  /** 0 = disabled */
+  security?: {
+    idleLockMinutes?: number
+  }
 }
 
 export interface RequestOptions {

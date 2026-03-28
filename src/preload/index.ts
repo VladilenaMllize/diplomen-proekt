@@ -13,9 +13,19 @@ import type {
   Store
 } from '../shared/types'
 
+export type VaultStatus = { diskEncrypted: boolean; unlocked: boolean }
+export type VaultOpResult = { ok: boolean; error?: string }
+
 const api = {
   getState: (): Promise<Store> => ipcRenderer.invoke('app:getState'),
   getStoreLoadError: (): Promise<string | null> => ipcRenderer.invoke('app:getStoreLoadError'),
+  getVaultStatus: (): Promise<VaultStatus> => ipcRenderer.invoke('vault:status'),
+  vaultUnlock: (password: string): Promise<VaultOpResult> => ipcRenderer.invoke('vault:unlock', password),
+  vaultLock: (): Promise<void> => ipcRenderer.invoke('vault:lock'),
+  vaultEnable: (password: string): Promise<VaultOpResult> => ipcRenderer.invoke('vault:enable', password),
+  vaultDisable: (password: string): Promise<VaultOpResult> => ipcRenderer.invoke('vault:disable', password),
+  vaultChangePassword: (current: string, next: string): Promise<VaultOpResult> =>
+    ipcRenderer.invoke('vault:changePassword', current, next),
   updateSettings: (settings: AppSettings): Promise<AppSettings | undefined> =>
     ipcRenderer.invoke('app:updateSettings', settings),
   exportConfig: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:exportConfig'),

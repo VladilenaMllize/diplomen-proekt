@@ -17,12 +17,24 @@ import type {
 import { HealthCheckManager } from './services/healthCheck'
 import { buildRequestHeaders, buildUrlWithQuery, redactHeaders, sendHttpRequest } from './services/httpClient'
 import { applyTemplateChain, substituteHeadersFull } from './services/macroTemplate'
-import { consumeStoreLoadError, getStore, initStore, updateStore } from './services/storage'
+import {
+  changeVaultPassword,
+  consumeStoreLoadError,
+  disableVault,
+  enableVault,
+  getStore,
+  getVaultStatus,
+  initStore,
+  isVaultLockedForUse,
+  lockVaultSession,
+  unlockVault,
+  updateStore
+} from './services/storage'
 
 const MAX_HISTORY = 200
 
 let mainWindow: BrowserWindow | null = null
-let healthManager: HealthCheckManager
+let healthManager!: HealthCheckManager
 
 const createWindow = async () => {
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -232,8 +244,30 @@ const executeRequest = async (
 const EXPORT_VERSION = 1
 
 const registerIpc = () => {
-  ipcMain.handle('app:getState', () => getStore())
+  ipcMain.handle('app:getState', () => {
+    if (isVaultLockedForUse()) {
+      throw new Error('VAULT_LOCKED')
+    }
+    return getStore()
+  })
   ipcMain.handle('app:getStoreLoadError', () => consumeStoreLoadError())
+  ipcMain.handle('vault:status', () => getVaultStatus())
+  ipcMain.handle('vault:unlock', async (_event, password: string) => {
+    const result = await unlockVault(String(password ?? ''))
+    if (result.ok) {
+      healthManager.sync(getStore().devices)
+    }
+    return result
+  })
+  ipcMain.handle('vault:lock', async () => {
+    await lockVaultSession()
+    healthManager.sync([])
+  })
+  ipcMain.handle('vault:enable', async (_event, password: string) => enableVault(String(password ?? '')))
+  ipcMain.handle('vault:disable', async (_event, password: string) => disableVault(String(password ?? '')))
+  ipcMain.handle('vault:changePassword', async (_event, current: string, next: string) =>
+    changeVaultPassword(String(current ?? ''), String(next ?? ''))
+  )
 
   ipcMain.handle('app:exportConfig', async () => {
     const store = getStore()
@@ -329,6 +363,12 @@ const registerIpc = () => {
             globalVariables: {
               ...(current.settings?.globalVariables ?? {}),
               ...(parsed.settings.globalVariables ?? {})
+            },
+            security: {
+              idleLockMinutes:
+                parsed.settings.security?.idleLockMinutes ??
+                current.settings?.security?.idleLockMinutes ??
+                0
             }
           }
         }
@@ -515,7 +555,11 @@ const registerIpc = () => {
       store.settings = {
         theme: next.theme,
         locale: next.locale,
-        globalVariables: { ...next.globalVariables }
+        globalVariables: { ...next.globalVariables },
+        security: {
+          idleLockMinutes:
+            next.security?.idleLockMinutes ?? store.settings?.security?.idleLockMinutes ?? 0
+        }
       }
     })
     return getStore().settings
@@ -527,6 +571,9 @@ const boot = async () => {
   await initStore()
 
   healthManager = new HealthCheckManager(async (deviceId, status) => {
+    if (isVaultLockedForUse()) {
+      return
+    }
     await updateStore((store) => {
       const device = store.devices.find((item) => item.id === deviceId)
       if (device) {
@@ -539,7 +586,11 @@ const boot = async () => {
 
   await createWindow()
   registerIpc()
-  healthManager.sync(getStore().devices)
+  if (!isVaultLockedForUse()) {
+    healthManager.sync(getStore().devices)
+  } else {
+    healthManager.sync([])
+  }
 }
 
 app.on('window-all-closed', () => {
