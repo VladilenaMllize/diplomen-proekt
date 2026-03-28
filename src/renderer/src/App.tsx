@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useState, type FormEvent } from 'react'
 import type {
+  AppSettings,
   AuthType,
   Device,
   DeviceInput,
@@ -12,6 +13,7 @@ import type {
   RequestOptions,
   ResponseData
 } from '@shared/types'
+import { t } from './i18n'
 
 type TabKey = 'request' | 'history' | 'macros'
 
@@ -52,7 +54,27 @@ type MacroFormState = {
   steps: MacroStepForm[]
 }
 
-const httpMethods: HttpMethod[] = ['GET', 'POST', 'PUT', 'DELETE']
+const httpMethods: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+
+const defaultAppSettings = (): AppSettings => ({
+  theme: 'light',
+  locale: 'bg',
+  globalVariables: {}
+})
+
+function parseGlobalsText(raw: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    const k = trimmed.slice(0, eq).trim()
+    const v = trimmed.slice(eq + 1).trim()
+    if (k) out[k] = v
+  }
+  return out
+}
 const authTypes: AuthType[] = ['none', 'basic', 'bearer', 'apiKey']
 
 const createEmptyDeviceForm = (): DeviceFormState => ({
@@ -246,6 +268,9 @@ export default function App() {
   const [historySelection, setHistorySelection] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [startupLoadError, setStartupLoadError] = useState<string | null>(null)
+  const [settings, setSettings] = useState<AppSettings>(defaultAppSettings)
+  const [globalsText, setGlobalsText] = useState('')
+  const [historyToRequestSeed, setHistoryToRequestSeed] = useState<HistoryEntry | null>(null)
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.id === selectedDeviceId) ?? null,
@@ -268,6 +293,17 @@ export default function App() {
       setFolders(state.folders ?? [])
       setHistory(state.history)
       setMacros(state.macros)
+      const nextSettings: AppSettings = {
+        theme: state.settings?.theme ?? 'light',
+        locale: state.settings?.locale ?? 'bg',
+        globalVariables: { ...(state.settings?.globalVariables ?? {}) }
+      }
+      setSettings(nextSettings)
+      setGlobalsText(
+        Object.entries(nextSettings.globalVariables)
+          .map(([k, v]) => `${k}=${v}`)
+          .join('\n')
+      )
 
     setSelectedDeviceId((current) => {
       if (current && state.devices.some((device) => device.id === current)) {
@@ -298,6 +334,10 @@ export default function App() {
       if (err) setStartupLoadError(err)
     })()
   }, [])
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', settings.theme === 'dark')
+  }, [settings.theme])
 
   useEffect(() => {
     if (!window.api) return
@@ -345,6 +385,16 @@ export default function App() {
     await loadState()
   }
 
+  const persistAppSettings = async (next: AppSettings) => {
+    await window.api.updateSettings(next)
+    await loadState()
+  }
+
+  const handleDuplicateFromHistory = (entry: HistoryEntry) => {
+    setHistoryToRequestSeed(entry)
+    setActiveTab('request')
+  }
+
   const handleReplayRequest = async (entry: HistoryEntry) => {
     const device = devices.find((d) => d.id === entry.deviceId)
     if (!device) {
@@ -357,7 +407,8 @@ export default function App() {
       method: entry.method,
       path: entry.path,
       headers: Object.keys(entry.headers).length > 0 ? entry.headers : undefined,
-      body: entry.body
+      body: entry.body,
+      query: entry.query
     })
   }
 
@@ -434,53 +485,111 @@ export default function App() {
     )
   }
 
+  const loc = settings.locale
+
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900">
-      <aside className="flex w-80 flex-col overflow-hidden border-r border-slate-200 bg-white">
-        <div className="shrink-0 flex items-center justify-between border-b border-slate-200 px-4 py-3">
+    <div className="flex h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <aside className="flex w-80 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+        <div className="shrink-0 flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <div>
-            <h1 className="text-lg font-semibold">REST API Устройства</h1>
-            <p className="text-xs text-slate-500">Desktop REST Client</p>
+            <h1 className="text-lg font-semibold">{t(loc, 'app.title')}</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t(loc, 'app.subtitle')}</p>
           </div>
           <button
-            className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+            type="button"
+            className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
             onClick={() => setSelectedDeviceId(null)}
           >
-            Ново
+            {t(loc, 'nav.new')}
           </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">Устройства</h2>
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-2 dark:border-slate-800">
+            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">{t(loc, 'settings.theme')}</span>
+            <select
+              className="rounded border border-slate-200 px-1 py-0.5 text-[11px] dark:border-slate-600 dark:bg-slate-800"
+              value={settings.theme}
+              onChange={(e) =>
+                void persistAppSettings({
+                  ...settings,
+                  theme: e.target.value as AppSettings['theme']
+                })
+              }
+            >
+              <option value="light">{t(loc, 'settings.theme.light')}</option>
+              <option value="dark">{t(loc, 'settings.theme.dark')}</option>
+            </select>
+            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">{t(loc, 'settings.locale')}</span>
+            <select
+              className="rounded border border-slate-200 px-1 py-0.5 text-[11px] dark:border-slate-600 dark:bg-slate-800"
+              value={settings.locale}
+              onChange={(e) =>
+                void persistAppSettings({
+                  ...settings,
+                  locale: e.target.value as AppSettings['locale']
+                })
+              }
+            >
+              <option value="bg">БГ</option>
+              <option value="en">EN</option>
+            </select>
+          </div>
+          <div className="mt-2">
+            <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">{t(loc, 'settings.globals')}</label>
+            <p className="text-[10px] text-slate-500 dark:text-slate-500">{t(loc, 'settings.globalsHelp')}</p>
+            <textarea
+              className="mt-1 min-h-[56px] w-full rounded border border-slate-200 px-2 py-1 font-mono text-[10px] dark:border-slate-600 dark:bg-slate-800"
+              value={globalsText}
+              onChange={(e) => setGlobalsText(e.target.value)}
+              placeholder={'token=secret\nbaseUrl=v1'}
+            />
+            <button
+              type="button"
+              className="mt-1 rounded bg-emerald-600 px-2 py-0.5 text-[11px] text-white hover:bg-emerald-700"
+              onClick={() =>
+                void persistAppSettings({
+                  ...settings,
+                  globalVariables: parseGlobalsText(globalsText)
+                })
+              }
+            >
+              {t(loc, 'settings.saveGlobals')}
+            </button>
+          </div>
+
+          <div className="mt-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(loc, 'nav.devices')}</h2>
             <div className="flex gap-1">
               <button
-                className="rounded border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
+                type="button"
+                className="rounded border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
                 onClick={handleExportConfig}
               >
-                Export
+                {t(loc, 'nav.export')}
               </button>
               <button
-                className="rounded border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
+                type="button"
+                className="rounded border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
                 onClick={handleImportConfig}
               >
-                Import
+                {t(loc, 'nav.import')}
               </button>
             </div>
           </div>
           {startupLoadError && (
-            <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+            <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
               {startupLoadError}
             </div>
           )}
           {importError && (
-            <div className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-600">
+            <div className="mt-2 rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] text-rose-600 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
               {importError}
             </div>
           )}
           <div className="mt-2 space-y-2">
             {devices.length === 0 ? (
-              <p className="text-xs text-slate-500">Няма добавени устройства.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{t(loc, 'devices.empty')}</p>
             ) : (
               devices.map((device) => {
                 const status = device.status?.state ?? 'unknown'
@@ -492,11 +601,12 @@ export default function App() {
                       : 'bg-slate-400'
                 return (
                   <button
+                    type="button"
                     key={device.id}
                     className={`flex w-full items-center justify-between rounded border px-3 py-2 text-left text-sm ${
                       device.id === selectedDeviceId
-                        ? 'border-emerald-400 bg-emerald-50'
-                        : 'border-slate-200 hover:bg-slate-50'
+                        ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-950/40'
+                        : 'border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800'
                     }`}
                     onClick={() => setSelectedDeviceId(device.id)}
                   >
@@ -514,10 +624,11 @@ export default function App() {
           </div>
         </div>
 
-        <div className="border-t border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-700">Детайли</h2>
+        <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(loc, 'nav.details')}</h2>
           <DeviceForm
             device={selectedDevice}
+            locale={loc}
             onSave={handleSaveDevice}
             onRemove={handleRemoveDevice}
           />
@@ -525,34 +636,43 @@ export default function App() {
       </aside>
 
       <main className="flex flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-6 py-3">
-          <TabButton label="Заявки" active={activeTab === 'request'} onClick={() => setActiveTab('request')} />
+        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-6 py-3 dark:border-slate-700 dark:bg-slate-900">
           <TabButton
-            label="История"
+            label={t(loc, 'tab.request')}
+            active={activeTab === 'request'}
+            onClick={() => setActiveTab('request')}
+          />
+          <TabButton
+            label={t(loc, 'tab.history')}
             active={activeTab === 'history'}
             onClick={() => setActiveTab('history')}
           />
-          <TabButton label="Макроси" active={activeTab === 'macros'} onClick={() => setActiveTab('macros')} />
+          <TabButton label={t(loc, 'tab.macros')} active={activeTab === 'macros'} onClick={() => setActiveTab('macros')} />
         </header>
 
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-6">
           {activeTab === 'request' && (
             <RequestPanel
               device={selectedDevice}
+              locale={loc}
               sending={sending}
               sendError={requestSendError}
               response={lastResponse}
+              seedFromHistory={historyToRequestSeed}
+              onSeedConsumed={() => setHistoryToRequestSeed(null)}
               onSend={handleSendRequest}
             />
           )}
 
           {activeTab === 'history' && (
             <HistoryPanel
+              locale={loc}
               history={history}
               selectedId={historySelection}
               onSelect={setHistorySelection}
               onClear={handleClearHistory}
               onReplay={handleReplayRequest}
+              onDuplicateToRequest={handleDuplicateFromHistory}
               selectedEntry={selectedHistory}
               devices={devices}
             />
@@ -560,6 +680,7 @@ export default function App() {
 
           {activeTab === 'macros' && (
             <MacroPanel
+              locale={loc}
               devices={devices}
               folders={folders}
               macro={selectedMacro}
@@ -591,9 +712,12 @@ const TabButton = ({
   onClick: () => void
 }) => (
   <button
+    type="button"
     onClick={onClick}
     className={`rounded px-3 py-1 text-sm font-medium ${
-      active ? 'bg-emerald-500 text-white' : 'text-slate-600 hover:bg-slate-100'
+      active
+        ? 'bg-emerald-500 text-white'
+        : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
     }`}
   >
     {label}
@@ -602,10 +726,12 @@ const TabButton = ({
 
 const DeviceForm = ({
   device,
+  locale,
   onSave,
   onRemove
 }: {
   device: Device | null
+  locale: AppSettings['locale']
   onSave: (input: DeviceInput) => void
   onRemove: (deviceId: string) => void
 }) => {
@@ -786,15 +912,15 @@ const DeviceForm = ({
           type="submit"
           className="rounded bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-600"
         >
-          Запази
+          {t(locale, 'device.save')}
         </button>
         {device && (
           <button
             type="button"
-            className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+            className="rounded border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
             onClick={() => onRemove(device.id)}
           >
-            Изтрий
+            {t(locale, 'device.delete')}
           </button>
         )}
       </div>
@@ -802,25 +928,71 @@ const DeviceForm = ({
   )
 }
 
+type QueryRow = { id: string; key: string; value: string }
+
 const RequestPanel = ({
   device,
+  locale,
   response,
   onSend,
   sending,
-  sendError
+  sendError,
+  seedFromHistory,
+  onSeedConsumed
 }: {
   device: Device | null
+  locale: AppSettings['locale']
   response: ResponseData | null
   onSend: (request: RequestOptions) => void
   sending: boolean
   sendError: string | null
+  seedFromHistory: HistoryEntry | null
+  onSeedConsumed: () => void
 }) => {
   const [method, setMethod] = useState<HttpMethod>('GET')
   const [path, setPath] = useState('')
   const [headersText, setHeadersText] = useState('{}')
   const [body, setBody] = useState('')
   const [timeoutMs, setTimeoutMs] = useState('')
+  const [queryRows, setQueryRows] = useState<QueryRow[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!seedFromHistory) return
+    setMethod(seedFromHistory.method)
+    setPath(seedFromHistory.path)
+    setHeadersText(
+      Object.keys(seedFromHistory.headers).length > 0
+        ? JSON.stringify(seedFromHistory.headers, null, 2)
+        : '{}'
+    )
+    setBody(seedFromHistory.body ?? '')
+    const q = seedFromHistory.query
+    if (q && Object.keys(q).length > 0) {
+      setQueryRows(
+        Object.entries(q).map(([key, value]) => ({
+          id: crypto.randomUUID(),
+          key,
+          value: String(value)
+        }))
+      )
+    } else {
+      setQueryRows([])
+    }
+    onSeedConsumed()
+  }, [seedFromHistory, onSeedConsumed])
+
+  const addQueryRow = () => {
+    setQueryRows((r) => [...r, { id: crypto.randomUUID(), key: '', value: '' }])
+  }
+
+  const updateQueryRow = (id: string, patch: Partial<QueryRow>) => {
+    setQueryRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+  }
+
+  const removeQueryRow = (id: string) => {
+    setQueryRows((rows) => rows.filter((row) => row.id !== id))
+  }
 
   const handleSend = () => {
     if (!device) {
@@ -837,9 +1009,15 @@ const RequestPanel = ({
           throw new Error('Headers should be object')
         }
       } catch {
-        setError('Невалиден JSON за headers')
+        setError(locale === 'en' ? 'Invalid JSON for headers' : 'Невалиден JSON за headers')
         return
       }
+    }
+
+    const query: Record<string, string> = {}
+    for (const row of queryRows) {
+      const k = row.key.trim()
+      if (k) query[k] = row.value
     }
 
     setError(null)
@@ -848,6 +1026,7 @@ const RequestPanel = ({
       deviceId: device.id,
       method,
       path,
+      query: Object.keys(query).length > 0 ? query : undefined,
       headers,
       body: body || undefined,
       timeoutMs: Number.isFinite(timeoutValue) && timeoutValue > 0 ? timeoutValue : undefined
@@ -860,13 +1039,15 @@ const RequestPanel = ({
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[1.1fr_1fr] gap-6">
-      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
-        <h2 className="shrink-0 text-sm font-semibold text-slate-700">HTTP заявка</h2>
-        <p className="mt-1 text-xs text-slate-500">Base URL: {baseUrl}</p>
+      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <h2 className="shrink-0 text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'request.title')}</h2>
+        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          {t(locale, 'request.baseUrl')}: {baseUrl}
+        </p>
 
         {!device && (
-          <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500">
-            Избери устройство за изпращане на заявки.
+          <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
+            {t(locale, 'request.pickDevice')}
           </div>
         )}
 
@@ -874,7 +1055,7 @@ const RequestPanel = ({
           <div className="mt-4 space-y-3 text-xs">
             <div className="grid grid-cols-[90px_1fr] gap-2">
               <select
-                className="rounded border border-slate-200 px-2 py-1"
+                className="rounded border border-slate-200 px-2 py-1 dark:border-slate-600 dark:bg-slate-800"
                 value={method}
                 onChange={(event) => setMethod(event.target.value as HttpMethod)}
               >
@@ -885,7 +1066,7 @@ const RequestPanel = ({
                 ))}
               </select>
               <input
-                className="rounded border border-slate-200 px-2 py-1"
+                className="rounded border border-slate-200 px-2 py-1 dark:border-slate-600 dark:bg-slate-800"
                 value={path}
                 onChange={(event) => setPath(event.target.value)}
                 placeholder="/status"
@@ -893,18 +1074,61 @@ const RequestPanel = ({
             </div>
 
             <div>
-              <label className="text-[11px] font-semibold text-slate-500">Headers (JSON)</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  {t(locale, 'request.query')}
+                </label>
+                <button
+                  type="button"
+                  className="text-[11px] text-emerald-600 hover:underline dark:text-emerald-400"
+                  onClick={addQueryRow}
+                >
+                  {t(locale, 'request.addQuery')}
+                </button>
+              </div>
+              <div className="mt-1 space-y-1">
+                {queryRows.length === 0 && (
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">—</p>
+                )}
+                {queryRows.map((row) => (
+                  <div key={row.id} className="flex gap-1">
+                    <input
+                      className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
+                      placeholder={t(locale, 'request.queryKey')}
+                      value={row.key}
+                      onChange={(e) => updateQueryRow(row.id, { key: e.target.value })}
+                    />
+                    <input
+                      className="min-w-0 flex-1 rounded border border-slate-200 px-1 py-0.5 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
+                      placeholder={t(locale, 'request.queryValue')}
+                      value={row.value}
+                      onChange={(e) => updateQueryRow(row.id, { value: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="shrink-0 px-1 text-rose-500"
+                      onClick={() => removeQueryRow(row.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t(locale, 'request.headers')}</label>
               <textarea
-                className="mt-1 min-h-[100px] w-full rounded border border-slate-200 px-2 py-1 font-mono text-[11px]"
+                className="mt-1 min-h-[100px] w-full rounded border border-slate-200 px-2 py-1 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
                 value={headersText}
                 onChange={(event) => setHeadersText(event.target.value)}
               />
             </div>
 
             <div>
-              <label className="text-[11px] font-semibold text-slate-500">Body</label>
+              <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{t(locale, 'request.body')}</label>
               <textarea
-                className="mt-1 min-h-[120px] w-full rounded border border-slate-200 px-2 py-1 font-mono text-[11px]"
+                className="mt-1 min-h-[120px] w-full rounded border border-slate-200 px-2 py-1 font-mono text-[11px] dark:border-slate-600 dark:bg-slate-800"
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
               />
@@ -912,17 +1136,18 @@ const RequestPanel = ({
 
             <div className="flex items-center gap-2">
               <input
-                className="w-40 rounded border border-slate-200 px-2 py-1"
+                className="w-40 rounded border border-slate-200 px-2 py-1 dark:border-slate-600 dark:bg-slate-800"
                 value={timeoutMs}
                 onChange={(event) => setTimeoutMs(event.target.value)}
-                placeholder="Timeout (ms)"
+                placeholder={t(locale, 'request.timeout')}
               />
               <button
+                type="button"
                 className="rounded bg-emerald-500 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-600"
                 onClick={handleSend}
                 disabled={sending}
               >
-                {sending ? 'Изпращане...' : 'Изпрати'}
+                {sending ? t(locale, 'request.sending') : t(locale, 'request.send')}
               </button>
             </div>
 
@@ -932,7 +1157,7 @@ const RequestPanel = ({
         )}
       </div>
 
-      <ResponsePanel response={response} />
+      <ResponsePanel locale={locale} response={response} />
     </div>
   )
 }
@@ -1025,17 +1250,23 @@ const CopyButton = ({ text, label }: { text: string; label: string }) => {
   )
 }
 
-const ResponsePanel = ({ response }: { response: ResponseData | null }) => {
+const ResponsePanel = ({
+  locale,
+  response
+}: {
+  locale: AppSettings['locale']
+  response: ResponseData | null
+}) => {
   const parsedText =
     response?.parsedBody !== undefined ? JSON.stringify(response.parsedBody, null, 2) : ''
   const rawText = response?.body ?? '—'
 
   return (
-    <div className="rounded border border-slate-200 bg-white p-4">
-      <h2 className="text-sm font-semibold text-slate-700">Отговор</h2>
+    <div className="rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'response.title')}</h2>
       {!response && (
-        <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500">
-          Няма получен отговор.
+        <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
+          {t(locale, 'response.none')}
         </div>
       )}
       {response && (
@@ -1080,19 +1311,23 @@ const ResponsePanel = ({ response }: { response: ResponseData | null }) => {
 }
 
 const HistoryPanel = ({
+  locale,
   history,
   selectedId,
   onSelect,
   onClear,
   onReplay,
+  onDuplicateToRequest,
   selectedEntry,
   devices
 }: {
+  locale: AppSettings['locale']
   history: HistoryEntry[]
   selectedId: string | null
   onSelect: (id: string | null) => void
   onClear: () => void
   onReplay: (entry: HistoryEntry) => void
+  onDuplicateToRequest: (entry: HistoryEntry) => void
   selectedEntry: HistoryEntry | null
   devices: Device[]
 }) => {
@@ -1113,14 +1348,15 @@ const HistoryPanel = ({
 
   return (
   <div className="grid min-h-0 flex-1 grid-cols-[1fr_1.1fr] gap-6">
-    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
+    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
       <div className="shrink-0 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">История</h2>
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'history.title')}</h2>
         <button
-          className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+          type="button"
+          className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
           onClick={onClear}
         >
-          Изчисти
+          {t(locale, 'history.clear')}
         </button>
       </div>
 
@@ -1157,6 +1393,7 @@ const HistoryPanel = ({
         )}
         {filteredHistory.map((entry) => (
           <button
+            type="button"
             key={entry.id}
             className={`w-full rounded border px-3 py-2 text-left text-xs ${
               selectedId === entry.id
@@ -1178,21 +1415,33 @@ const HistoryPanel = ({
       </div>
     </div>
 
-    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
-      <div className="shrink-0 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700">Детайли</h2>
-        {selectedEntry && devices.some((d) => d.id === selectedEntry.deviceId) && (
-          <button
-            className="rounded bg-emerald-500 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600"
-            onClick={() => onReplay(selectedEntry)}
-          >
-            Изпрати отново
-          </button>
+    <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'history.details')}</h2>
+        {selectedEntry && (
+          <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+              onClick={() => onDuplicateToRequest(selectedEntry)}
+            >
+              {t(locale, 'request.duplicate')}
+            </button>
+            {devices.some((d) => d.id === selectedEntry.deviceId) && (
+              <button
+                type="button"
+                className="rounded bg-emerald-500 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600"
+                onClick={() => onReplay(selectedEntry)}
+              >
+                {t(locale, 'history.replay')}
+              </button>
+            )}
+          </div>
         )}
       </div>
       {!selectedEntry && (
-        <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500">
-          Избери заявка от историята.
+        <div className="mt-4 rounded border border-dashed border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
+          {t(locale, 'history.pick')}
         </div>
       )}
       {selectedEntry && (
@@ -1217,7 +1466,7 @@ const HistoryPanel = ({
               </pre>
             </div>
           )}
-          <ResponsePanel response={selectedEntry.response ?? null} />
+          <ResponsePanel locale={locale} response={selectedEntry.response ?? null} />
         </div>
       )}
     </div>
@@ -1226,6 +1475,7 @@ const HistoryPanel = ({
 }
 
 const MacroPanel = ({
+  locale,
   devices,
   folders,
   macro,
@@ -1240,6 +1490,7 @@ const MacroPanel = ({
   onUpdateFolder,
   onRemoveFolder
 }: {
+  locale: AppSettings['locale']
   devices: Device[]
   folders: MacroFolder[]
   macro: Macro | null
@@ -1262,6 +1513,8 @@ const MacroPanel = ({
   const [newFolderName, setNewFolderName] = useState('')
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
   const [editingFolderName, setEditingFolderName] = useState('')
+  const [renamingMacroId, setRenamingMacroId] = useState<string | null>(null)
+  const [renameMacroDraft, setRenameMacroDraft] = useState('')
 
   useEffect(() => {
     setForm(macroToForm(macro, devices[0]?.id ?? ''))
@@ -1315,6 +1568,35 @@ const MacroPanel = ({
     }))
   }
 
+  const moveStep = (fromIndex: number, toIndex: number) => {
+    setForm((prev) => {
+      const steps = [...prev.steps]
+      if (fromIndex < 0 || fromIndex >= steps.length || toIndex < 0 || toIndex >= steps.length) {
+        return prev
+      }
+      const [removed] = steps.splice(fromIndex, 1)
+      steps.splice(toIndex, 0, removed)
+      return { ...prev, steps }
+    })
+  }
+
+  const commitMacroRename = (macroId: string) => {
+    const m = macros.find((x) => x.id === macroId)
+    const name = renameMacroDraft.trim()
+    if (!m || !name) {
+      setRenamingMacroId(null)
+      return
+    }
+    onSave({
+      id: m.id,
+      name,
+      deviceId: m.deviceId,
+      folderId: m.folderId,
+      steps: m.steps
+    })
+    setRenamingMacroId(null)
+  }
+
   const handleSave = () => {
     try {
       const { input } = formToMacroInput(form)
@@ -1331,21 +1613,23 @@ const MacroPanel = ({
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr] gap-6">
-      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4">
+      <div className="flex min-h-0 flex-col overflow-hidden rounded border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-slate-700">Макроси</h2>
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t(locale, 'macros.title')}</h2>
           <div className="flex gap-1">
             <button
-              className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              type="button"
+              className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
               onClick={() => onSelect(null)}
             >
-              Нов
+              {t(locale, 'macros.new')}
             </button>
             <button
-              className="rounded border border-emerald-500 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+              type="button"
+              className="rounded border border-emerald-500 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300"
               onClick={() => setShowFolderForm((v) => !v)}
             >
-              Make a folder
+              {t(locale, 'macros.makeFolder')}
             </button>
           </div>
         </div>
@@ -1377,23 +1661,64 @@ const MacroPanel = ({
         )}
         <div className="mt-3 max-h-[360px] space-y-3 overflow-y-auto">
           {macros.length === 0 && (
-            <div className="text-xs text-slate-500">Няма макроси.</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{t(locale, 'macros.empty')}</div>
           )}
           {uncategorized.length > 0 && (
             <div>
-              <div className="mb-1 text-[11px] font-medium text-slate-500">Без папка</div>
+              <div className="mb-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">Без папка</div>
               <div className="space-y-2">
                 {uncategorized.map((item) => (
-                  <button
-                    key={item.id}
-                    className={`block w-full rounded border px-3 py-2 text-left text-xs ${
-                      item.id === macro?.id ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'
-                    }`}
-                    onClick={() => onSelect(item.id)}
-                  >
-                    <div className="font-medium">{item.name}</div>
-                    <div className="text-[11px] text-slate-500">Стъпки: {item.steps.length}</div>
-                  </button>
+                  <div key={item.id} className="flex gap-1">
+                    {renamingMacroId === item.id ? (
+                      <div className="flex min-w-0 flex-1 gap-1">
+                        <input
+                          className="min-w-0 flex-1 rounded border border-slate-200 px-1.5 py-1 text-[11px] dark:border-slate-600 dark:bg-slate-800"
+                          value={renameMacroDraft}
+                          onChange={(e) => setRenameMacroDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitMacroRename(item.id)
+                            if (e.key === 'Escape') setRenamingMacroId(null)
+                          }}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className="shrink-0 rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white"
+                          onClick={() => commitMacroRename(item.id)}
+                        >
+                          OK
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={`min-w-0 flex-1 rounded border px-2 py-2 text-left text-xs ${
+                            item.id === macro?.id
+                              ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-950/40'
+                              : 'border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800'
+                          }`}
+                          onClick={() => onSelect(item.id)}
+                        >
+                          <div className="font-medium">{item.name}</div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {t(locale, 'macros.steps')}: {item.steps.length}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800"
+                          title={t(locale, 'macros.rename')}
+                          onClick={() => {
+                            setRenamingMacroId(item.id)
+                            setRenameMacroDraft(item.name)
+                          }}
+                        >
+                          ✎
+                        </button>
+                      </>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -1457,16 +1782,57 @@ const MacroPanel = ({
                 </div>
                 <div className="space-y-2">
                   {folderMacros.map((item) => (
-                    <button
-                      key={item.id}
-                      className={`block w-full rounded border px-3 py-2 text-left text-xs ${
-                        item.id === macro?.id ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'
-                      }`}
-                      onClick={() => onSelect(item.id)}
-                    >
-                      <div className="font-medium">{item.name}</div>
-                      <div className="text-[11px] text-slate-500">Стъпки: {item.steps.length}</div>
-                    </button>
+                    <div key={item.id} className="flex gap-1">
+                      {renamingMacroId === item.id ? (
+                        <div className="flex min-w-0 flex-1 gap-1">
+                          <input
+                            className="min-w-0 flex-1 rounded border border-slate-200 px-1.5 py-1 text-[11px] dark:border-slate-600 dark:bg-slate-800"
+                            value={renameMacroDraft}
+                            onChange={(e) => setRenameMacroDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') commitMacroRename(item.id)
+                              if (e.key === 'Escape') setRenamingMacroId(null)
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="shrink-0 rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] text-white"
+                            onClick={() => commitMacroRename(item.id)}
+                          >
+                            OK
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={`min-w-0 flex-1 rounded border px-2 py-2 text-left text-xs ${
+                              item.id === macro?.id
+                                ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-950/40'
+                                : 'border-slate-200 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800'
+                            }`}
+                            onClick={() => onSelect(item.id)}
+                          >
+                            <div className="font-medium">{item.name}</div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {t(locale, 'macros.steps')}: {item.steps.length}
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800"
+                            title={t(locale, 'macros.rename')}
+                            onClick={() => {
+                              setRenamingMacroId(item.id)
+                              setRenameMacroDraft(item.name)
+                            }}
+                          >
+                            ✎
+                          </button>
+                        </>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1521,22 +1887,51 @@ const MacroPanel = ({
             </select>
           </div>
 
-          <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-500">
-            Променливи: <code className="rounded bg-slate-200 px-1">&#123;&#123;step1&#125;&#125;</code>,{' '}
-            <code className="rounded bg-slate-200 px-1">&#123;&#123;step2.field&#125;&#125;</code> — референция към отговори от предишни стъпки
+          <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
+            <code className="rounded bg-slate-200 px-1 dark:bg-slate-700">&#123;&#123;token&#125;&#125;</code>,{' '}
+            <code className="rounded bg-slate-200 px-1 dark:bg-slate-700">&#123;&#123;baseUrl&#125;&#125;</code> — от
+            глобалните променливи;{' '}
+            <code className="rounded bg-slate-200 px-1 dark:bg-slate-700">&#123;&#123;step1&#125;&#125;</code>,{' '}
+            <code className="rounded bg-slate-200 px-1 dark:bg-slate-700">&#123;&#123;step2.field&#125;&#125;</code> — от
+            предишни стъпки
           </div>
           <div className="space-y-3">
             {form.steps.map((step, index) => (
-              <div key={step.id} className="rounded border border-slate-200 p-3">
-                <div className="flex items-center justify-between">
+              <div
+                key={step.id}
+                className="rounded border border-slate-200 p-3 dark:border-slate-600"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', String(index))
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const from = Number.parseInt(e.dataTransfer.getData('text/plain'), 10)
+                  if (!Number.isFinite(from)) return
+                  moveStep(from, index)
+                }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="cursor-grab select-none text-[11px] text-slate-400 active:cursor-grabbing"
+                    title="Drag to reorder"
+                  >
+                    ⋮⋮
+                  </span>
                   <input
-                    className="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+                    className="w-full rounded border border-slate-200 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-800"
                     value={step.name}
                     onChange={(event) => updateStep(step.id, { name: event.target.value })}
                     placeholder={`Стъпка ${index + 1}`}
                   />
                   <button
-                    className="ml-2 text-xs text-rose-500"
+                    type="button"
+                    className="ml-2 shrink-0 text-xs text-rose-500"
                     onClick={() => removeStep(step.id)}
                   >
                     X

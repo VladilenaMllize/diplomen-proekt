@@ -1,5 +1,35 @@
 import type { ResponseData } from '../../shared/types'
 
+/** App-wide {{name}}; leaves {{stepN...}} for macro step substitution. */
+export function substituteGlobals(text: string, globals: Record<string, string>): string {
+  return text.replace(/\{\{([^}]+)\}\}/g, (_m, inner: string) => {
+    const key = inner.trim()
+    if (/^step\d+/i.test(key)) return `{{${inner}}}`
+    return globals[key] ?? ''
+  })
+}
+
+export function applyTemplateChain(
+  text: string,
+  globals: Record<string, string>,
+  stepResults: Map<number, ResponseData>
+): string {
+  return substituteVariables(substituteGlobals(text, globals), stepResults)
+}
+
+export function substituteHeadersFull(
+  headers: Record<string, string> | undefined,
+  globals: Record<string, string>,
+  stepResults: Map<number, ResponseData>
+): Record<string, string> | undefined {
+  if (!headers || Object.keys(headers).length === 0) return headers
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(headers)) {
+    out[k] = applyTemplateChain(v, globals, stepResults)
+  }
+  return out
+}
+
 export function getByPath(obj: unknown, path: string): unknown {
   if (obj === null || obj === undefined) return undefined
   const segments = path.split('.')

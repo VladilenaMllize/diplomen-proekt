@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { substituteHeaders, substituteVariables } from '../../src/main/services/macroTemplate'
+import {
+  substituteGlobals,
+  substituteHeaders,
+  substituteVariables
+} from '../../src/main/services/macroTemplate'
 import type { ResponseData } from '../../src/shared/types'
 
 describe('macroTemplate', () => {
@@ -37,6 +41,12 @@ describe('macroTemplate', () => {
     const m = new Map<number, ResponseData>([[1, step1]])
     const headers = substituteHeaders({ Authorization: 'Bearer {{step1.id}}', X: '{{step1.status}}' }, m)
     expect(headers).toEqual({ Authorization: 'Bearer abc', X: '201' })
+  })
+
+  it('substituteGlobals replaces {{name}} but preserves {{stepN}}', () => {
+    const g = { token: 'SECRET', baseUrl: 'v1' }
+    expect(substituteGlobals('/{{baseUrl}}/x?k={{token}}', g)).toBe('/v1/x?k=SECRET')
+    expect(substituteGlobals('{{step1.id}} and {{token}}', g)).toBe('{{step1.id}} and SECRET')
   })
 })
 

@@ -7,6 +7,10 @@
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+:root.dark {
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
 }

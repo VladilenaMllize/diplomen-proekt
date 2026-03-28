@@ -1,11 +1,20 @@
 import { app } from 'electron'
 import { existsSync, promises as fs } from 'fs'
 import path from 'path'
-import type { Store } from '../../shared/types'
+import type { AppSettings, Store } from '../../shared/types'
+import { deserializeAuthFromDisk, serializeAuthForDisk } from './authSecrets'
 
-const STORE_VERSION = 2
+const STORE_VERSION = 3
+
+const defaultSettings: AppSettings = {
+  theme: 'light',
+  locale: 'bg',
+  globalVariables: {}
+}
+
 const DEFAULT_STORE: Store = {
   version: STORE_VERSION,
+  settings: { ...defaultSettings, globalVariables: { ...defaultSettings.globalVariables } },
   devices: [],
   macros: [],
   folders: [],
@@ -83,7 +92,14 @@ async function writeStoreToDisk(nextStore: Store) {
   const filePath = getStorePath()
   const backupPath = getBackupPath()
   const tmpPath = `${filePath}.tmp`
-  const payload = JSON.stringify(nextStore, null, 2)
+  const forDisk: Store = {
+    ...nextStore,
+    devices: nextStore.devices.map((d) => ({
+      ...d,
+      auth: serializeAuthForDisk(d.auth)
+    }))
+  }
+  const payload = JSON.stringify(forDisk, null, 2)
   await fs.mkdir(path.dirname(filePath), { recursive: true })
   await fs.writeFile(tmpPath, payload, 'utf-8')
   try {
@@ -110,9 +126,22 @@ function getBackupPath() {
 }
 
 function normalizeStore(input: Partial<Store>): Store {
+  const devices = Array.isArray(input.devices) ? input.devices : []
+  const settings: AppSettings = {
+    ...defaultSettings,
+    ...input.settings,
+    globalVariables: {
+      ...defaultSettings.globalVariables,
+      ...(input.settings?.globalVariables ?? {})
+    }
+  }
   return {
     version: STORE_VERSION,
-    devices: Array.isArray(input.devices) ? input.devices : [],
+    settings,
+    devices: devices.map((d) => ({
+      ...d,
+      auth: deserializeAuthFromDisk(d.auth)
+    })),
     macros: Array.isArray(input.macros) ? input.macros : [],
     folders: Array.isArray(input.folders) ? input.folders : [],
     history: Array.isArray(input.history) ? input.history : []

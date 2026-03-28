@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buildRequestHeaders, buildUrl, redactHeaders, sendHttpRequest } from '../../src/main/services/httpClient'
+import {
+  buildRequestHeaders,
+  buildUrl,
+  buildUrlWithQuery,
+  redactHeaders,
+  sendHttpRequest
+} from '../../src/main/services/httpClient'
 
 describe('httpClient', () => {
   it('buildUrl combines protocol, host, basePath and request path', () => {
@@ -14,6 +20,16 @@ describe('httpClient', () => {
     expect(buildUrl({ protocol: 'http', ip: 'x', port: 1 }, 'https://example.com/a')).toBe(
       'https://example.com/a'
     )
+  })
+
+  it('buildUrlWithQuery appends search params', () => {
+    const u = buildUrlWithQuery({ protocol: 'http', ip: '127.0.0.1', port: 80 }, '/a', {
+      x: '1',
+      y: '2'
+    })
+    expect(u).toContain('/a?')
+    expect(u).toContain('x=1')
+    expect(u).toContain('y=2')
   })
 
   it('buildRequestHeaders applies auth overlays', () => {
@@ -59,6 +75,29 @@ describe('httpClient', () => {
     const res = await sendHttpRequest({ url: 'http://x', method: 'GET', headers: {} })
     expect(res.parsedType).toBe('json')
     expect(res.parsedBody).toEqual({ a: 1 })
+
+    globalThis.fetch = originalFetch
+  })
+
+  it('sendHttpRequest sends body for PATCH', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      expect(init?.method).toBe('PATCH')
+      expect(init?.body).toBe('{"a":1}')
+      return {
+        status: 204,
+        statusText: 'No Content',
+        text: async () => '',
+        headers: { forEach: () => {} }
+      } as unknown as Response
+    }) as unknown as typeof fetch
+
+    await sendHttpRequest({
+      url: 'http://x',
+      method: 'PATCH',
+      headers: {},
+      body: '{"a":1}'
+    })
 
     globalThis.fetch = originalFetch
   })

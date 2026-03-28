@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AppSettings,
   Device,
   DeviceInput,
   DeviceStatusUpdate,
@@ -15,6 +16,8 @@ import type {
 const api = {
   getState: (): Promise<Store> => ipcRenderer.invoke('app:getState'),
   getStoreLoadError: (): Promise<string | null> => ipcRenderer.invoke('app:getStoreLoadError'),
+  updateSettings: (settings: AppSettings): Promise<AppSettings | undefined> =>
+    ipcRenderer.invoke('app:updateSettings', settings),
   exportConfig: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:exportConfig'),
   importConfig: (): Promise<{ ok: boolean; error: string | null }> =>
     ipcRenderer.invoke('app:importConfig'),

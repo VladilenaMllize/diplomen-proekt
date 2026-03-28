@@ -4,12 +4,14 @@
 
 ## Основни функции
 - Добавяне на устройства по IP адрес и порт
-- Изпращане на HTTP заявки (GET/POST/PUT/DELETE)
+- Изпращане на HTTP заявки (GET/POST/PUT/PATCH/DELETE), query параметри, дублиране от историята
 - Четимо визуализиране на отговори (JSON/XML parsing)
-- Автентикация (Basic, Bearer, API Key)
+- Автентикация (Basic, Bearer, API Key) — **чувствителните стойности се шифроват с Electron `safeStorage`** при запис на диск (ако ОС поддържа)
+- Глобални променливи `{{име}}` в път, headers, body и макроси (напр. `{{token}}`); макросите запазват `{{step1.field}}` за предишни стъпки
 - Health check с периодични заявки
-- Макроси (поредица от заявки)
+- Макроси (поредица от заявки), преименуване, пренареждане на стъпки с drag-and-drop
 - История на заявки и отговори
+- Светла/тъмна тема и език EN/BG
 
 ## Архитектура
 
@@ -48,6 +50,14 @@ npm run dev        # Терминал 2 – REST Client
 4. Изпращай заявки към `/health`, `/sensors`, `/config`
 
 **Забележка:** Ако порт 3000 е зает, backend автоматично ще използва 3001, 3002 и т.н.
+
+**GET /sensors** поддържа пагинация и филтър: `?page=1&limit=10&q=temp`. Отговорът е `{ items, page, limit, total }`.
+
+**OpenAPI 3:** спецификацията е в [`backend/openapi.yaml`](backend/openapi.yaml); при стартиран backend се обслужва на **`http://localhost:<port>/openapi.yaml`**.
+
+**WebSocket:** `ws://localhost:<port>/ws` — при POST към `/sensors` се изпраща съобщение `{"type":"sensor:upsert","payload":{...}}` към свързаните клиенти.
+
+**Rate limiting:** глобално ~300 заявки/минута на IP (express-rate-limit).
 
 ## Пакетиране (Distribution)
 
@@ -92,7 +102,7 @@ cd backend
 
 Ръчно с `Invoke-RestMethod`:
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:3000/sensors" -Method Get
+Invoke-RestMethod -Uri "http://localhost:3000/sensors?page=1&limit=5&q=temp" -Method Get
 Invoke-RestMethod -Uri "http://localhost:3000/config" -Method Put -Body '{"name":"My Hub","version":"2.0"}' -ContentType "application/json"
 ```
 
@@ -103,13 +113,18 @@ Invoke-RestMethod -Uri "http://localhost:3000/config" -Method Put -Body '{"name"
 | Method | Path       | Описание                  |
 |--------|------------|---------------------------|
 | GET    | `/health`  | Health check              |
-| GET    | `/sensors` | Списък сензори            |
+| GET    | `/sensors` | Списък сензори (пагинация `page`, `limit`, филтър `q`) |
 | POST   | `/sensors` | Добавяне/актуализация     |
 | GET    | `/config`  | Конфигурация на устройство |
 | PUT    | `/config`  | Обновяване на конфигурация |
 
+## Тестове
+
+- **Unit:** `npm test` (Vitest) — URL building, шаблони за макроси/глобални променливи, парсване на отговори.
+- **E2E (mock backend):** `npm run test:e2e` (Playwright) — стартира backend на порт `3099` (или `E2E_BACKEND_PORT`), проверява health, пагинация, Zod валидация и OpenAPI endpoint.
+
 ## Бележки
-- **REST Client:** Данните (устройства, макроси, история) се съхраняват локално в `appData` директорията на Electron.
+- **REST Client:** Данните (устройства, макроси, история, настройки) се съхраняват локално в `appData` директорията на Electron.
 - **Backend:** Сензорите и конфигурацията се съхраняват в SQLite база данни (`backend/data/sensors.db`) – данните се запазват между рестарти.
 - Приложението е изградено с Electron + React + TypeScript + Tailwind.
 - Backend използва Node.js + Express + TypeScript + SQLite (better-sqlite3).

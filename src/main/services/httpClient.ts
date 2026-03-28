@@ -17,6 +17,22 @@ export function buildUrl(device: { protocol: string; ip: string; port: number; b
   return `${device.protocol}://${device.ip}:${device.port}${basePath}${requestPath}`
 }
 
+export function buildUrlWithQuery(
+  device: { protocol: string; ip: string; port: number; basePath?: string },
+  path: string,
+  query?: Record<string, string>
+): string {
+  let url = buildUrl(device, path)
+  if (!query || Object.keys(query).length === 0) return url
+  const params = new URLSearchParams()
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== '') params.append(k, v)
+  }
+  const qs = params.toString()
+  if (!qs) return url
+  return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`
+}
+
 export function buildRequestHeaders(
   baseHeaders: Record<string, string> | undefined,
   auth?: AuthConfig
@@ -28,17 +44,18 @@ export function buildRequestHeaders(
   }
 
   if (auth.type === 'basic' && auth.basic) {
-    const token = Buffer.from(`${auth.basic.username}:${auth.basic.password}`).toString('base64')
+    const password = auth.basic.password ?? ''
+    const token = Buffer.from(`${auth.basic.username}:${password}`).toString('base64')
     headers.Authorization = `Basic ${token}`
   }
 
   if (auth.type === 'bearer' && auth.bearer) {
-    headers.Authorization = `Bearer ${auth.bearer.token}`
+    headers.Authorization = `Bearer ${auth.bearer.token ?? ''}`
   }
 
   if (auth.type === 'apiKey' && auth.apiKey) {
     const headerName = auth.apiKey.headerName?.trim() || 'X-API-Key'
-    headers[headerName] = auth.apiKey.value
+    headers[headerName] = auth.apiKey.value ?? ''
   }
 
   return headers

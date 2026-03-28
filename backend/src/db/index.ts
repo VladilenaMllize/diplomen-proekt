@@ -45,6 +45,27 @@ export function getAllSensors(): Sensor[] {
   return rows.map((r) => ({ id: r.id, value: r.value, unit: r.unit ?? undefined }))
 }
 
+export function listSensorsPaged(options: { page?: number; limit?: number; q?: string }): {
+  items: Sensor[]
+  page: number
+  limit: number
+  total: number
+} {
+  let rows = getAllSensors()
+  const q = options.q?.trim().toLowerCase()
+  if (q) {
+    rows = rows.filter(
+      (s) => s.id.toLowerCase().includes(q) || (s.unit ?? '').toLowerCase().includes(q)
+    )
+  }
+  const page = Math.max(1, options.page ?? 1)
+  const limit = Math.min(100, Math.max(1, options.limit ?? 50))
+  const total = rows.length
+  const start = (page - 1) * limit
+  const items = rows.slice(start, start + limit)
+  return { items, page, limit, total }
+}
+
 export function upsertSensor(sensor: { id: string; value?: number; unit?: string }): Sensor {
   const existing = db.prepare('SELECT * FROM sensors WHERE id = ?').get(sensor.id) as { id: string; value: number; unit: string | null } | undefined
   const value = typeof sensor.value === 'number' ? sensor.value : existing?.value ?? 0

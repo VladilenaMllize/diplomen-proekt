@@ -2,6 +2,7 @@
 /// <reference path="./prism.d.ts" />
 
 import type {
+  AppSettings,
   Device,
   DeviceInput,
   DeviceStatusUpdate,
@@ -19,6 +20,7 @@ declare global {
     api: {
       getState: () => Promise<Store>
       getStoreLoadError: () => Promise<string | null>
+      updateSettings: (settings: AppSettings) => Promise<AppSettings | undefined>
       exportConfig: () => Promise<{ ok: boolean }>
       importConfig: () => Promise<{ ok: boolean; error: string | null }>
       saveDevice: (input: DeviceInput) => Promise<Device>

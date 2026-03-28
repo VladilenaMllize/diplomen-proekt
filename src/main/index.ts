@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import path from 'path'
 import { existsSync, promises as fs } from 'fs'
 import type {
+  AppSettings,
   Device,
   DeviceInput,
   HistoryEntry,
@@ -14,8 +15,8 @@ import type {
   ResponseData
 } from '../shared/types'
 import { HealthCheckManager } from './services/healthCheck'
-import { buildRequestHeaders, buildUrl, redactHeaders, sendHttpRequest } from './services/httpClient'
-import { substituteHeaders, substituteVariables } from './services/macroTemplate'
+import { buildRequestHeaders, buildUrlWithQuery, redactHeaders, sendHttpRequest } from './services/httpClient'
+import { applyTemplateChain, substituteHeadersFull } from './services/macroTemplate'
 import { consumeStoreLoadError, getStore, initStore, updateStore } from './services/storage'
 
 const MAX_HISTORY = 200
@@ -81,6 +82,74 @@ const createWindow = async () => {
   })
 }
 
+function mergeAuthKeepSecrets(input: DeviceInput, existing?: Device): DeviceInput {
+  const auth = input.auth
+  const ex = existing?.auth
+  if (!auth) return input
+  if (auth.type === 'basic' && auth.basic) {
+    if (auth.basic.password === '' && ex?.type === 'basic' && ex.basic?.password) {
+      return {
+        ...input,
+        auth: {
+          type: 'basic',
+          basic: { username: auth.basic.username, password: ex.basic.password }
+        }
+      }
+    }
+  }
+  if (auth.type === 'bearer' && auth.bearer) {
+    if (auth.bearer.token === '' && ex?.type === 'bearer' && ex.bearer?.token) {
+      return {
+        ...input,
+        auth: { type: 'bearer', bearer: { token: ex.bearer.token } }
+      }
+    }
+  }
+  if (auth.type === 'apiKey' && auth.apiKey) {
+    if (auth.apiKey.value === '' && ex?.type === 'apiKey' && ex.apiKey?.value) {
+      return {
+        ...input,
+        auth: {
+          type: 'apiKey',
+          apiKey: {
+            headerName: auth.apiKey.headerName,
+            value: ex.apiKey.value
+          }
+        }
+      }
+    }
+  }
+  return input
+}
+
+function deviceForExport(d: Device): Device {
+  const auth = d.auth
+  if (!auth || auth.type === 'none') return d
+  if (auth.type === 'basic') {
+    return {
+      ...d,
+      auth: { type: 'basic', basic: { username: auth.basic?.username ?? '' } }
+    }
+  }
+  if (auth.type === 'bearer') {
+    return { ...d, auth: { type: 'bearer', bearer: {} } }
+  }
+  if (auth.type === 'apiKey') {
+    return {
+      ...d,
+      auth: {
+        type: 'apiKey',
+        apiKey: { headerName: auth.apiKey?.headerName ?? 'X-API-Key' }
+      }
+    }
+  }
+  return d
+}
+
+function getGlobalVariables(): Record<string, string> {
+  return getStore().settings?.globalVariables ?? {}
+}
+
 const normalizeDeviceInput = (input: DeviceInput, existing?: Device): Device => {
   const id = input.id ?? existing?.id ?? randomUUID()
   const ip = input.ip?.trim() ?? existing?.ip ?? ''
@@ -118,13 +187,20 @@ const executeRequest = async (
   request: RequestOptions,
   storeHistory: boolean
 ) => {
-  const url = buildUrl(device, request.path)
-  const headers = buildRequestHeaders(request.headers, request.authOverride ?? device.auth)
+  const globals = getGlobalVariables()
+  const emptySteps = new Map<number, ResponseData>()
+  const pathResolved = applyTemplateChain(request.path, globals, emptySteps)
+  const bodyResolved = request.body
+    ? applyTemplateChain(request.body, globals, emptySteps)
+    : undefined
+  const headersResolved = substituteHeadersFull(request.headers, globals, emptySteps)
+  const url = buildUrlWithQuery(device, pathResolved, request.query)
+  const headers = buildRequestHeaders(headersResolved, request.authOverride ?? device.auth)
   const response = await sendHttpRequest({
     url,
     method: request.method,
     headers,
-    body: request.body,
+    body: bodyResolved,
     timeoutMs: request.timeoutMs
   })
 
@@ -137,6 +213,7 @@ const executeRequest = async (
       url,
       headers: redactHeaders(headers),
       body: request.body,
+      query: request.query,
       timestamp: Date.now(),
       response
     }
@@ -166,7 +243,13 @@ const registerIpc = () => {
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
     if (result.canceled || !result.filePath) return { ok: false }
-    const data = { version: EXPORT_VERSION, devices: store.devices, macros: store.macros, folders: store.folders }
+    const data = {
+      version: EXPORT_VERSION,
+      settings: store.settings,
+      devices: store.devices.map(deviceForExport),
+      macros: store.macros,
+      folders: store.folders
+    }
     await fs.writeFile(result.filePath, JSON.stringify(data, null, 2), 'utf-8')
     return { ok: true }
   })
@@ -181,7 +264,12 @@ const registerIpc = () => {
     if (result.canceled || !filePath) return { ok: false, error: null }
     try {
       const raw = await fs.readFile(filePath, 'utf-8')
-      const parsed = JSON.parse(raw) as { devices?: unknown[]; macros?: unknown[]; folders?: unknown[] }
+      const parsed = JSON.parse(raw) as {
+        devices?: unknown[]
+        macros?: unknown[]
+        folders?: unknown[]
+        settings?: Partial<AppSettings>
+      }
       const devices = Array.isArray(parsed.devices) ? parsed.devices : []
       const macros = Array.isArray(parsed.macros) ? parsed.macros : []
       const folders = Array.isArray(parsed.folders) ? parsed.folders : []
@@ -234,6 +322,16 @@ const registerIpc = () => {
         }
       })
       await updateStore((current) => {
+        if (parsed.settings) {
+          current.settings = {
+            theme: parsed.settings.theme === 'dark' ? 'dark' : 'light',
+            locale: parsed.settings.locale === 'en' ? 'en' : 'bg',
+            globalVariables: {
+              ...(current.settings?.globalVariables ?? {}),
+              ...(parsed.settings.globalVariables ?? {})
+            }
+          }
+        }
         current.devices.push(...newDevices)
         current.folders.push(...newFolders)
         current.macros.push(...newMacros)
@@ -249,7 +347,8 @@ const registerIpc = () => {
     const store = getStore()
     const index = store.devices.findIndex((device) => device.id === input.id)
     const existing = index >= 0 ? store.devices[index] : undefined
-    const device = normalizeDeviceInput(input, existing)
+    const merged = mergeAuthKeepSecrets(input, existing)
+    const device = normalizeDeviceInput(merged, existing)
 
     await updateStore((current) => {
       const existingIndex = current.devices.findIndex((item) => item.id === device.id)
@@ -374,9 +473,10 @@ const registerIpc = () => {
         if (r?.response) stepResults.set(j + 1, r.response)
       }
       try {
-        const path = substituteVariables(step.path, stepResults)
-        const headers = substituteHeaders(step.headers, stepResults)
-        const body = step.body ? substituteVariables(step.body, stepResults) : undefined
+        const globals = getGlobalVariables()
+        const path = applyTemplateChain(step.path, globals, stepResults)
+        const headers = substituteHeadersFull(step.headers, globals, stepResults)
+        const body = step.body ? applyTemplateChain(step.body, globals, stepResults) : undefined
         const response = await executeRequest(
           device,
           {
@@ -408,6 +508,17 @@ const registerIpc = () => {
       finishedAt: Date.now(),
       results
     }
+  })
+
+  ipcMain.handle('app:updateSettings', async (_event, next: AppSettings) => {
+    await updateStore((store) => {
+      store.settings = {
+        theme: next.theme,
+        locale: next.locale,
+        globalVariables: { ...next.globalVariables }
+      }
+    })
+    return getStore().settings
   })
 }
 

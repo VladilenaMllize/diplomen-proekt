@@ -1,4 +1,4 @@
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export type AuthType = 'none' | 'basic' | 'bearer' | 'apiKey'
 
@@ -6,14 +6,18 @@ export interface AuthConfig {
   type: AuthType
   basic?: {
     username: string
-    password: string
+    /** Plaintext in memory / IPC; omitted on disk when encrypted */
+    password?: string
+    passwordEnc?: string
   }
   bearer?: {
-    token: string
+    token?: string
+    tokenEnc?: string
   }
   apiKey?: {
     headerName: string
-    value: string
+    value?: string
+    valueEnc?: string
   }
 }
 
@@ -51,10 +55,22 @@ export type DeviceInput = Omit<Device, 'id' | 'status'> & {
   status?: DeviceStatus
 }
 
+export type ThemeMode = 'light' | 'dark'
+export type LocaleCode = 'en' | 'bg'
+
+export interface AppSettings {
+  theme: ThemeMode
+  locale: LocaleCode
+  /** App-wide template variables, e.g. {{token}}, {{baseUrl}} (not {{step1}}) */
+  globalVariables: Record<string, string>
+}
+
 export interface RequestOptions {
   deviceId: string
   method: HttpMethod
   path: string
+  /** Appended as query string (merged with ? in path if present) */
+  query?: Record<string, string>
   headers?: Record<string, string>
   body?: string
   authOverride?: AuthConfig
@@ -82,6 +98,7 @@ export interface HistoryEntry {
   url: string
   headers: Record<string, string>
   body?: string
+  query?: Record<string, string>
   timestamp: number
   response?: ResponseData
 }
@@ -132,6 +149,7 @@ export interface MacroRunResult {
 
 export interface Store {
   version: number
+  settings?: AppSettings
   devices: Device[]
   macros: Macro[]
   folders: MacroFolder[]
