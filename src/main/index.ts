@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron'
 import { randomUUID } from 'crypto'
 import path from 'path'
 import { existsSync, promises as fs } from 'fs'
@@ -18,6 +18,14 @@ import { HealthCheckManager } from './services/healthCheck'
 import { buildRequestHeaders, buildUrlWithQuery, redactHeaders, sendHttpRequest } from './services/httpClient'
 import { applyTemplateChain, substituteHeadersFull } from './services/macroTemplate'
 import {
+  hasAuthAccount,
+  isAppSessionUnlocked,
+  lockAppSession,
+  readAuthRecord,
+  registerAccount,
+  verifyLogin
+} from './services/appAuth'
+import {
   changeVaultPassword,
   consumeStoreLoadError,
   disableVault,
@@ -34,6 +42,7 @@ import {
 const MAX_HISTORY = 200
 
 let mainWindow: BrowserWindow | null = null
+let settingsWindow: BrowserWindow | null = null
 let healthManager!: HealthCheckManager
 
 const createWindow = async () => {
@@ -53,6 +62,7 @@ const createWindow = async () => {
     height: 800,
     minWidth: 980,
     minHeight: 640,
+    center: true,
     backgroundColor: '#0f172a',
     webPreferences: {
       preload: preloadPath,
@@ -90,6 +100,9 @@ const createWindow = async () => {
   }
 
   mainWindow.on('closed', () => {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.close()
+    }
     mainWindow = null
   })
 }
@@ -243,12 +256,61 @@ const executeRequest = async (
 
 const EXPORT_VERSION = 1
 
-const registerIpc = () => {
-  ipcMain.handle('app:getState', () => {
-    if (isVaultLockedForUse()) {
-      throw new Error('VAULT_LOCKED')
+function broadcastVaultStatus() {
+  const st = getVaultStatus()
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('vault:statusUpdated', st)
     }
-    return getStore()
+  }
+}
+
+function broadcastSessionLocked() {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('app:sessionLocked')
+    }
+  }
+}
+
+const registerIpc = () => {
+  ipcMain.handle('auth:getBootstrap', () => ({
+    hasAccount: hasAuthAccount(),
+    sessionUnlocked: isAppSessionUnlocked()
+  }))
+  ipcMain.handle('auth:getUsername', async () => {
+    const r = await readAuthRecord()
+    return r?.username ?? ''
+  })
+  ipcMain.handle('auth:register', async (_event, username: string, password: string) =>
+    registerAccount(String(username ?? ''), String(password ?? ''))
+  )
+  ipcMain.handle('auth:login', async (_event, username: string, password: string) =>
+    verifyLogin(String(username ?? ''), String(password ?? ''))
+  )
+  ipcMain.handle('auth:lockSession', async () => {
+    lockAppSession()
+    await lockVaultSession()
+    healthManager.sync([])
+    broadcastVaultStatus()
+    broadcastSessionLocked()
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.close()
+    }
+  })
+
+  ipcMain.handle('app:getState', () => {
+    try {
+      return getStore()
+    } catch (e) {
+      if (e instanceof Error && e.message === 'APP_AUTH_LOCKED') {
+        return { error: 'APP_AUTH_LOCKED' as const }
+      }
+      if (e instanceof Error && e.message === 'VAULT_LOCKED') {
+        return { error: 'VAULT_LOCKED' as const }
+      }
+      throw e
+    }
   })
   ipcMain.handle('app:getStoreLoadError', () => consumeStoreLoadError())
   ipcMain.handle('vault:status', () => getVaultStatus())
@@ -257,17 +319,29 @@ const registerIpc = () => {
     if (result.ok) {
       healthManager.sync(getStore().devices)
     }
+    broadcastVaultStatus()
     return result
   })
   ipcMain.handle('vault:lock', async () => {
     await lockVaultSession()
     healthManager.sync([])
+    broadcastVaultStatus()
   })
-  ipcMain.handle('vault:enable', async (_event, password: string) => enableVault(String(password ?? '')))
-  ipcMain.handle('vault:disable', async (_event, password: string) => disableVault(String(password ?? '')))
-  ipcMain.handle('vault:changePassword', async (_event, current: string, next: string) =>
-    changeVaultPassword(String(current ?? ''), String(next ?? ''))
-  )
+  ipcMain.handle('vault:enable', async (_event, password: string) => {
+    const r = await enableVault(String(password ?? ''))
+    broadcastVaultStatus()
+    return r
+  })
+  ipcMain.handle('vault:disable', async (_event, password: string) => {
+    const r = await disableVault(String(password ?? ''))
+    broadcastVaultStatus()
+    return r
+  })
+  ipcMain.handle('vault:changePassword', async (_event, current: string, next: string) => {
+    const r = await changeVaultPassword(String(current ?? ''), String(next ?? ''))
+    broadcastVaultStatus()
+    return r
+  })
 
   ipcMain.handle('app:exportConfig', async () => {
     const store = getStore()
@@ -562,7 +636,76 @@ const registerIpc = () => {
         }
       }
     })
-    return getStore().settings
+    const updated = getStore().settings
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('app:settingsUpdated', updated)
+      }
+    }
+    return updated
+  })
+
+  ipcMain.handle('app:focusMainWindow', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  ipcMain.handle('app:openSettingsWindow', async () => {
+    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+    const preloadPath = path.resolve(__dirname, '../preload/index.cjs')
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.focus()
+      return
+    }
+    const workArea = screen.getPrimaryDisplay().workArea
+    settingsWindow = new BrowserWindow({
+      x: workArea.x,
+      y: workArea.y,
+      width: 440,
+      height: 560,
+      minWidth: 360,
+      minHeight: 400,
+      parent: mainWindow ?? undefined,
+      show: false,
+      backgroundColor: '#0f172a',
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+    settingsWindow.once('ready-to-show', () => {
+      settingsWindow?.show()
+    })
+    settingsWindow.on('closed', () => {
+      settingsWindow = null
+    })
+
+    const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
+    const withSettingsQuery = (base: string) => {
+      const u = new URL(base)
+      u.searchParams.set('window', 'settings')
+      return u.toString()
+    }
+
+    try {
+      if (isDev) {
+        try {
+          await settingsWindow.loadURL(withSettingsQuery(devServerUrl))
+        } catch {
+          await settingsWindow.loadURL(withSettingsQuery(devServerUrl.replace(':5173', ':5174')))
+        }
+      } else {
+        const htmlPath = path.join(__dirname, '../renderer/index.html')
+        await settingsWindow.loadFile(htmlPath, { query: { window: 'settings' } })
+      }
+    } catch (error) {
+      console.error('Failed to load settings window:', error)
+      settingsWindow.close()
+    }
   })
 }
 
@@ -571,7 +714,7 @@ const boot = async () => {
   await initStore()
 
   healthManager = new HealthCheckManager(async (deviceId, status) => {
-    if (isVaultLockedForUse()) {
+    if (isVaultLockedForUse() || !isAppSessionUnlocked()) {
       return
     }
     await updateStore((store) => {
@@ -586,8 +729,12 @@ const boot = async () => {
 
   await createWindow()
   registerIpc()
-  if (!isVaultLockedForUse()) {
-    healthManager.sync(getStore().devices)
+  if (!isVaultLockedForUse() && isAppSessionUnlocked()) {
+    try {
+      healthManager.sync(getStore().devices)
+    } catch {
+      healthManager.sync([])
+    }
   } else {
     healthManager.sync([])
   }

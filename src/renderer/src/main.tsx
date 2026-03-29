@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { SettingsWindow } from './SettingsWindow'
 import './index.css'
 import { THEME_PREF_KEY } from './lib/theme'
 
@@ -49,13 +50,17 @@ if (!window.api) {
 }
 
 const root = document.getElementById('root')
+const isSettingsWindow =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('window') === 'settings'
+
 if (!root) {
   document.body.innerHTML = '<div style="padding:20px;color:red;">Root element not found.</div>'
 } else {
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
       <RenderErrorBoundary>
-        <App />
+        {isSettingsWindow ? <SettingsWindow /> : <App />}
       </RenderErrorBoundary>
     </React.StrictMode>
   )

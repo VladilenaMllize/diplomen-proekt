@@ -11,6 +11,7 @@ import type {
   RequestOptions,
   ResponseData
 } from '@shared/types'
+import { AppLoginScreen, AppRegisterScreen } from './components/AppAuthScreens'
 import { AppSidebar } from './components/AppSidebar'
 import { HistoryPanel } from './components/HistoryPanel'
 import { MacroPanel } from './components/MacroPanel'
@@ -20,9 +21,21 @@ import { VaultUnlockScreen } from './components/VaultUnlockScreen'
 import { t } from './i18n'
 import { defaultAppSettings } from './lib/appSettings'
 import { THEME_PREF_KEY } from './lib/theme'
+
+function readStoredTheme(): 'light' | 'dark' {
+  try {
+    const s = localStorage.getItem(THEME_PREF_KEY)
+    if (s === 'dark' || s === 'light') return s
+  } catch {
+    /* ignore */
+  }
+  return defaultAppSettings().theme
+}
 import { vaultErrorMessage } from './lib/vaultUi'
 
 type TabKey = 'request' | 'history' | 'macros'
+
+type AuthPhase = 'loading' | 'register' | 'login' | 'session'
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([])
@@ -40,20 +53,16 @@ export default function App() {
   const [historySelection, setHistorySelection] = useState<string | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [startupLoadError, setStartupLoadError] = useState<string | null>(null)
-  const [settings, setSettings] = useState<AppSettings>(defaultAppSettings)
-  const [globalsText, setGlobalsText] = useState('')
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...defaultAppSettings(),
+    theme: readStoredTheme()
+  }))
   const [historyToRequestSeed, setHistoryToRequestSeed] = useState<HistoryEntry | null>(null)
   const [vaultNeedsUnlock, setVaultNeedsUnlock] = useState(false)
   const [vaultDiskEncrypted, setVaultDiskEncrypted] = useState(false)
   const [unlockPassword, setUnlockPassword] = useState('')
   const [unlockError, setUnlockError] = useState<string | null>(null)
-  const [vaultFormError, setVaultFormError] = useState<string | null>(null)
-  const [vaultEnablePass, setVaultEnablePass] = useState('')
-  const [vaultEnableConfirm, setVaultEnableConfirm] = useState('')
-  const [vaultDisablePass, setVaultDisablePass] = useState('')
-  const [vaultChangeCurrent, setVaultChangeCurrent] = useState('')
-  const [vaultChangeNext, setVaultChangeNext] = useState('')
-  const [vaultChangeConfirm, setVaultChangeConfirm] = useState('')
+  const [authPhase, setAuthPhase] = useState<AuthPhase>('loading')
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.id === selectedDeviceId) ?? null,
@@ -71,6 +80,12 @@ export default function App() {
       return
     }
     try {
+      const auth = await window.api.authGetBootstrap()
+      if (!auth.sessionUnlocked) {
+        setVaultNeedsUnlock(false)
+        setAuthPhase('login')
+        return
+      }
       const state = await window.api.getState()
       setDevices(state.devices)
       setFolders(state.folders ?? [])
@@ -85,11 +100,6 @@ export default function App() {
         }
       }
       setSettings(nextSettings)
-      setGlobalsText(
-        Object.entries(nextSettings.globalVariables)
-          .map(([k, v]) => `${k}=${v}`)
-          .join('\n')
-      )
 
       setSelectedDeviceId((current) => {
         if (current && state.devices.some((device) => device.id === current)) {
@@ -107,6 +117,11 @@ export default function App() {
       const st = await window.api.getVaultStatus()
       setVaultDiskEncrypted(st.diskEncrypted)
     } catch (error) {
+      if (error instanceof Error && error.message === 'APP_AUTH_LOCKED') {
+        setVaultNeedsUnlock(false)
+        setAuthPhase('login')
+        return
+      }
       if (error instanceof Error && error.message === 'VAULT_LOCKED') {
         setVaultNeedsUnlock(true)
         setDevices([])
@@ -127,6 +142,27 @@ export default function App() {
     if (!window.api) return
     let cancelled = false
     void (async () => {
+      const b = await window.api.authGetBootstrap()
+      if (cancelled) return
+      if (!b.hasAccount) {
+        setAuthPhase('register')
+        return
+      }
+      if (!b.sessionUnlocked) {
+        setAuthPhase('login')
+        return
+      }
+      setAuthPhase('session')
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (authPhase !== 'session' || !window.api) return
+    let cancelled = false
+    void (async () => {
       const st = await window.api.getVaultStatus()
       if (cancelled) return
       setVaultDiskEncrypted(st.diskEncrypted)
@@ -139,8 +175,8 @@ export default function App() {
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bootstrap once
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- phase-driven bootstrap
+  }, [authPhase])
 
   useEffect(() => {
     if (!window.api) return
@@ -151,13 +187,25 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', settings.theme === 'dark')
+    if (authPhase === 'session') {
+      document.documentElement.classList.toggle('dark', settings.theme === 'dark')
+      try {
+        localStorage.setItem(THEME_PREF_KEY, settings.theme)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    let dark = settings.theme === 'dark'
     try {
-      localStorage.setItem(THEME_PREF_KEY, settings.theme)
+      const s = localStorage.getItem(THEME_PREF_KEY)
+      if (s === 'dark') dark = true
+      else if (s === 'light') dark = false
     } catch {
       /* ignore */
     }
-  }, [settings.theme])
+    document.documentElement.classList.toggle('dark', dark)
+  }, [settings.theme, authPhase])
 
   useEffect(() => {
     if (!window.api) return
@@ -173,9 +221,62 @@ export default function App() {
     return () => unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (!window.api) return
+    const sub = window.api.subscribeSettingsUpdated
+    if (typeof sub !== 'function') return
+    return sub((next) => {
+      setSettings({
+        theme: next.theme ?? 'light',
+        locale: next.locale ?? 'bg',
+        globalVariables: { ...(next.globalVariables ?? {}) },
+        security: {
+          idleLockMinutes: next.security?.idleLockMinutes ?? 0
+        }
+      })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!window.api) return
+    const sub = window.api.subscribeVaultStatus
+    if (typeof sub !== 'function') return
+    return sub((st) => {
+      setVaultDiskEncrypted(st.diskEncrypted)
+      setVaultNeedsUnlock(st.diskEncrypted && !st.unlocked)
+      if (st.diskEncrypted && !st.unlocked) {
+        setDevices([])
+        setFolders([])
+        setHistory([])
+        setMacros([])
+        setSelectedDeviceId(null)
+        setSelectedMacroId(null)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!window.api) return
+    const sub = window.api.subscribeSessionLocked
+    if (typeof sub !== 'function') return
+    return sub(() => {
+      setVaultNeedsUnlock(false)
+      setDevices([])
+      setFolders([])
+      setHistory([])
+      setMacros([])
+      setSelectedDeviceId(null)
+      setSelectedMacroId(null)
+      void window.api.getVaultStatus().then((st) => {
+        setVaultDiskEncrypted(st.diskEncrypted)
+      })
+      setAuthPhase('login')
+    })
+  }, [])
+
   const idleMinutes = settings.security?.idleLockMinutes ?? 0
   useEffect(() => {
-    if (!window.api || idleMinutes <= 0 || !vaultDiskEncrypted || vaultNeedsUnlock) {
+    if (!window.api || idleMinutes <= 0 || authPhase !== 'session' || vaultNeedsUnlock) {
       return
     }
     const idleMs = idleMinutes * 60 * 1000
@@ -195,22 +296,13 @@ export default function App() {
     const id = window.setInterval(() => {
       if (Date.now() - last < idleMs) return
       last = Date.now()
-      void (async () => {
-        await window.api.vaultLock()
-        setVaultNeedsUnlock(true)
-        setDevices([])
-        setFolders([])
-        setHistory([])
-        setMacros([])
-        setSelectedDeviceId(null)
-        setSelectedMacroId(null)
-      })()
+      void window.api.authLockSession()
     }, 10_000)
     return () => {
       window.clearInterval(id)
       events.forEach((ev) => window.removeEventListener(ev, mark))
     }
-  }, [idleMinutes, vaultDiskEncrypted, vaultNeedsUnlock])
+  }, [idleMinutes, authPhase, vaultNeedsUnlock])
 
   const handleSaveDevice = async (input: DeviceInput) => {
     await window.api.saveDevice(input)
@@ -339,69 +431,6 @@ export default function App() {
     }
   }
 
-  const handleManualVaultLock = async () => {
-    if (!window.api) return
-    await window.api.vaultLock()
-    setVaultNeedsUnlock(true)
-    setDevices([])
-    setFolders([])
-    setHistory([])
-    setMacros([])
-    setSelectedDeviceId(null)
-    setSelectedMacroId(null)
-  }
-
-  const handleVaultEnable = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!window.api) return
-    setVaultFormError(null)
-    if (vaultEnablePass !== vaultEnableConfirm) {
-      setVaultFormError(t(settings.locale, 'vault.passwordMismatch'))
-      return
-    }
-    const r = await window.api.vaultEnable(vaultEnablePass)
-    if (r.ok) {
-      setVaultEnablePass('')
-      setVaultEnableConfirm('')
-      setVaultDiskEncrypted(true)
-      await loadState()
-    } else {
-      setVaultFormError(vaultErrorMessage(settings.locale, r.error))
-    }
-  }
-
-  const handleVaultDisable = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!window.api) return
-    setVaultFormError(null)
-    const r = await window.api.vaultDisable(vaultDisablePass)
-    if (r.ok) {
-      setVaultDisablePass('')
-      setVaultDiskEncrypted(false)
-      await loadState()
-    } else {
-      setVaultFormError(vaultErrorMessage(settings.locale, r.error))
-    }
-  }
-
-  const handleVaultChangePw = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!window.api) return
-    setVaultFormError(null)
-    if (vaultChangeNext !== vaultChangeConfirm) {
-      setVaultFormError(t(settings.locale, 'vault.passwordMismatch'))
-      return
-    }
-    const r = await window.api.vaultChangePassword(vaultChangeCurrent, vaultChangeNext)
-    if (r.ok) {
-      setVaultChangeCurrent('')
-      setVaultChangeNext('')
-      setVaultChangeConfirm('')
-    } else {
-      setVaultFormError(vaultErrorMessage(settings.locale, r.error))
-    }
-  }
-
   const selectedHistory = useMemo(
     () => history.find((entry) => entry.id === historySelection) ?? null,
     [history, historySelection]
@@ -419,6 +448,23 @@ export default function App() {
         </div>
       </div>
     )
+  }
+
+  if (authPhase === 'loading') {
+    const loc = navigator.language.toLowerCase().startsWith('bg') ? 'bg' : 'en'
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center bg-slate-50 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+        {t(loc, 'auth.loading')}
+      </div>
+    )
+  }
+
+  if (authPhase === 'register') {
+    return <AppRegisterScreen onRegistered={() => setAuthPhase('session')} />
+  }
+
+  if (authPhase === 'login') {
+    return <AppLoginScreen onLoggedIn={() => setAuthPhase('session')} />
   }
 
   if (vaultNeedsUnlock) {
@@ -439,28 +485,6 @@ export default function App() {
     <div className="flex h-full min-h-0 bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <AppSidebar
         locale={loc}
-        settings={settings}
-        persistAppSettings={persistAppSettings}
-        globalsText={globalsText}
-        setGlobalsText={setGlobalsText}
-        vaultDiskEncrypted={vaultDiskEncrypted}
-        vaultFormError={vaultFormError}
-        vaultEnablePass={vaultEnablePass}
-        setVaultEnablePass={setVaultEnablePass}
-        vaultEnableConfirm={vaultEnableConfirm}
-        setVaultEnableConfirm={setVaultEnableConfirm}
-        vaultDisablePass={vaultDisablePass}
-        setVaultDisablePass={setVaultDisablePass}
-        vaultChangeCurrent={vaultChangeCurrent}
-        setVaultChangeCurrent={setVaultChangeCurrent}
-        vaultChangeNext={vaultChangeNext}
-        setVaultChangeNext={setVaultChangeNext}
-        vaultChangeConfirm={vaultChangeConfirm}
-        setVaultChangeConfirm={setVaultChangeConfirm}
-        onManualVaultLock={handleManualVaultLock}
-        onVaultEnable={handleVaultEnable}
-        onVaultDisable={handleVaultDisable}
-        onVaultChangePw={handleVaultChangePw}
         startupLoadError={startupLoadError}
         importError={importError}
         devices={devices}

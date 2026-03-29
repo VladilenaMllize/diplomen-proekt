@@ -17,10 +17,17 @@ import type {
 
 type VaultStatus = { diskEncrypted: boolean; unlocked: boolean }
 type VaultOpResult = { ok: boolean; error?: string }
+type AuthBootstrap = { hasAccount: boolean; sessionUnlocked: boolean }
+type AuthOpResult = { ok: boolean; error?: string }
 
 declare global {
   interface Window {
     api: {
+      authGetBootstrap: () => Promise<AuthBootstrap>
+      authGetUsername: () => Promise<string>
+      authRegister: (username: string, password: string) => Promise<AuthOpResult>
+      authLogin: (username: string, password: string) => Promise<AuthOpResult>
+      authLockSession: () => Promise<void>
       getState: () => Promise<Store>
       getStoreLoadError: () => Promise<string | null>
       getVaultStatus: () => Promise<VaultStatus>
@@ -30,6 +37,8 @@ declare global {
       vaultDisable: (password: string) => Promise<VaultOpResult>
       vaultChangePassword: (current: string, next: string) => Promise<VaultOpResult>
       updateSettings: (settings: AppSettings) => Promise<AppSettings | undefined>
+      openSettingsWindow: () => Promise<void>
+      focusMainWindow: () => Promise<void>
       exportConfig: () => Promise<{ ok: boolean }>
       importConfig: () => Promise<{ ok: boolean; error: string | null }>
       saveDevice: (input: DeviceInput) => Promise<Device>
@@ -43,6 +52,9 @@ declare global {
       updateFolder: (id: string, name: string) => Promise<MacroFolder | null>
       removeFolder: (id: string) => Promise<void>
       onDeviceStatus: (callback: (update: DeviceStatusUpdate) => void) => () => void
+      subscribeSettingsUpdated: (callback: (settings: AppSettings) => void) => () => void
+      subscribeVaultStatus: (callback: (status: VaultStatus) => void) => () => void
+      subscribeSessionLocked: (callback: () => void) => () => void
     }
   }
 }

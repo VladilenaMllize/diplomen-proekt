@@ -9,6 +9,7 @@ import {
   sealWithNewPassword,
   tryOpenWithPassword
 } from './vaultCrypto'
+import { isAppSessionUnlocked } from './appAuth'
 
 const STORE_VERSION = 3
 
@@ -58,6 +59,9 @@ export function getVaultStatus(): { diskEncrypted: boolean; unlocked: boolean } 
 }
 
 export function getStore(): Store {
+  if (!isAppSessionUnlocked()) {
+    throw new Error('APP_AUTH_LOCKED')
+  }
   if (isVaultLockedForUse()) {
     throw new Error('VAULT_LOCKED')
   }
@@ -178,6 +182,9 @@ async function writeVaultStoreToDisk() {
 }
 
 export async function updateStore(mutator: (current: Store) => void) {
+  if (!isAppSessionUnlocked()) {
+    throw new Error('APP_AUTH_LOCKED')
+  }
   if (isVaultLockedForUse()) {
     throw new Error('VAULT_LOCKED')
   }

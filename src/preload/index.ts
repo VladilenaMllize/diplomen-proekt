@@ -15,9 +15,24 @@ import type {
 
 export type VaultStatus = { diskEncrypted: boolean; unlocked: boolean }
 export type VaultOpResult = { ok: boolean; error?: string }
+export type AuthBootstrap = { hasAccount: boolean; sessionUnlocked: boolean }
+export type AuthOpResult = { ok: boolean; error?: string }
 
 const api = {
-  getState: (): Promise<Store> => ipcRenderer.invoke('app:getState'),
+  authGetBootstrap: (): Promise<AuthBootstrap> => ipcRenderer.invoke('auth:getBootstrap'),
+  authGetUsername: (): Promise<string> => ipcRenderer.invoke('auth:getUsername'),
+  authRegister: (username: string, password: string): Promise<AuthOpResult> =>
+    ipcRenderer.invoke('auth:register', username, password),
+  authLogin: (username: string, password: string): Promise<AuthOpResult> =>
+    ipcRenderer.invoke('auth:login', username, password),
+  authLockSession: (): Promise<void> => ipcRenderer.invoke('auth:lockSession'),
+  getState: async (): Promise<Store> => {
+    const r = await ipcRenderer.invoke('app:getState')
+    if (r && typeof r === 'object' && 'error' in r) {
+      throw new Error(String((r as { error: string }).error))
+    }
+    return r as Store
+  },
   getStoreLoadError: (): Promise<string | null> => ipcRenderer.invoke('app:getStoreLoadError'),
   getVaultStatus: (): Promise<VaultStatus> => ipcRenderer.invoke('vault:status'),
   vaultUnlock: (password: string): Promise<VaultOpResult> => ipcRenderer.invoke('vault:unlock', password),
@@ -28,6 +43,8 @@ const api = {
     ipcRenderer.invoke('vault:changePassword', current, next),
   updateSettings: (settings: AppSettings): Promise<AppSettings | undefined> =>
     ipcRenderer.invoke('app:updateSettings', settings),
+  openSettingsWindow: (): Promise<void> => ipcRenderer.invoke('app:openSettingsWindow'),
+  focusMainWindow: (): Promise<void> => ipcRenderer.invoke('app:focusMainWindow'),
   exportConfig: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:exportConfig'),
   importConfig: (): Promise<{ ok: boolean; error: string | null }> =>
     ipcRenderer.invoke('app:importConfig'),
@@ -47,6 +64,21 @@ const api = {
     const handler = (_event: unknown, payload: DeviceStatusUpdate) => callback(payload)
     ipcRenderer.on('devices:status', handler)
     return () => ipcRenderer.removeListener('devices:status', handler)
+  },
+  subscribeSettingsUpdated: (callback: (settings: AppSettings) => void) => {
+    const handler = (_event: unknown, payload: AppSettings) => callback(payload)
+    ipcRenderer.on('app:settingsUpdated', handler)
+    return () => ipcRenderer.removeListener('app:settingsUpdated', handler)
+  },
+  subscribeVaultStatus: (callback: (status: VaultStatus) => void) => {
+    const handler = (_event: unknown, payload: VaultStatus) => callback(payload)
+    ipcRenderer.on('vault:statusUpdated', handler)
+    return () => ipcRenderer.removeListener('vault:statusUpdated', handler)
+  },
+  subscribeSessionLocked: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('app:sessionLocked', handler)
+    return () => ipcRenderer.removeListener('app:sessionLocked', handler)
   }
 }
 
