@@ -6,8 +6,6 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "backend": "cd backend && npm run dev",
-    "dev:all": "concurrently \"npm run backend\" \"npm run dev\"",
     "build": "electron-vite build",
     "build:win": "npm run build && electron-builder --win --config",
     "build:mac": "npm run build && electron-builder --mac --config",
@@ -18,7 +16,7 @@
     "lint": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "presentation": "node scripts/generate-presentation.mjs"
   },
   "dependencies": {
     "fast-xml-parser": "^4.5.3",
@@ -28,17 +26,16 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
     "@types/node": "^22.10.7",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "concurrently": "^9.1.0",
     "electron": "^32.2.1",
     "electron-builder": "^26.8.1",
     "electron-vite": "^2.2.0",
     "postcss": "^8.4.49",
+    "pptxgenjs": "^4.0.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",

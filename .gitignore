@@ -1,6 +1,5 @@
 node_modules/
 dist/
-backend/data/
 *.db
 dist-electron/
 out/

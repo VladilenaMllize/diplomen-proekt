@@ -7,7 +7,6 @@ files:
   - package.json
   - "!**/.vscode/*"
   - "!src/*"
-  - "!backend/*"
   - "!electron.vite.config.{js,ts,mjs,cjs}"
   - "!{.eslintignore,.eslintrc*,.prettier*,tsconfig*.json}"
 mac:
