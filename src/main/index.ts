@@ -1,7 +1,10 @@
+/** Main процес: прозорци, IPC, мрежов слой, локално състояние и сигурност (без UI директно). */
 import { app, BrowserWindow, dialog, ipcMain, screen } from 'electron'
 import { randomUUID } from 'crypto'
 import path from 'path'
 import { existsSync, promises as fs } from 'fs'
+
+/** Споделени типове между main, preload и renderer (DTO за устройства, заявки, store). */
 import type {
   AppSettings,
   Device,
@@ -14,9 +17,14 @@ import type {
   RequestOptions,
   ResponseData
 } from '../shared/types'
+
+/** Периодичен health check към конфигурирани крайни точки. */
 import { HealthCheckManager } from './services/healthCheck'
+/** Fetch-базиран HTTP клиент, URL builder, заглавки и редакция на тайни за историята. */
 import { buildRequestHeaders, buildUrlWithQuery, redactHeaders, sendHttpRequest } from './services/httpClient'
+/** Подстановки `{{var}}` и `{{stepN.field}}` за макроси и единични заявки. */
 import { applyTemplateChain, substituteHeadersFull } from './services/macroTemplate'
+/** Локален акаунт на приложението (scrypt), сесия lock/unlock преди vault/store. */
 import {
   hasAuthAccount,
   isAppSessionUnlocked,
@@ -25,6 +33,7 @@ import {
   registerAccount,
   verifyLogin
 } from './services/appAuth'
+/** Потребителски store, опционален криптиран vault, импорт/експорт на конфигурация. */
 import {
   changeVaultPassword,
   consumeStoreLoadError,
@@ -50,13 +59,13 @@ const createWindow = async () => {
   // electron-vite sets VITE_DEV_SERVER_URL, but if not available, try common ports
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
   const preloadPath = path.resolve(__dirname, '../preload/index.cjs')
-  
-  console.log('Creating window:', { isDev, devServerUrl, preloadPath, __dirname })
-  
-  // Check if preload file exists
-  const preloadExists = existsSync(preloadPath)
-  console.log('Preload file exists:', preloadExists, preloadPath)
-  
+
+  if (isDev) {
+    console.log('Creating window:', { isDev, devServerUrl, preloadPath, __dirname })
+    const preloadExists = existsSync(preloadPath)
+    console.log('Preload file exists:', preloadExists, preloadPath)
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -76,7 +85,9 @@ const createWindow = async () => {
   })
   
   mainWindow.webContents.on('console-message', (event, level, message) => {
-    console.log(`[Renderer ${level}]:`, message)
+    if (isDev) {
+      console.log(`[Renderer ${level}]:`, message)
+    }
   })
   
   if (isDev) {
@@ -95,7 +106,6 @@ const createWindow = async () => {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
     const htmlPath = path.join(__dirname, '../renderer/index.html')
-    console.log('Loading HTML file:', htmlPath)
     await mainWindow.loadFile(htmlPath)
   }
 

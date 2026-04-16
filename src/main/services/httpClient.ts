@@ -1,4 +1,6 @@
+/** Парсер за XML отговори (вградени/индустриални API). */
 import { XMLParser } from 'fast-xml-parser'
+
 import type { AuthConfig, HttpMethod, ResponseData } from '../../shared/types'
 
 const xmlParser = new XMLParser({

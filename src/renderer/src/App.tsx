@@ -1,9 +1,15 @@
+/**
+ * Корен на UI: табове заявка/история/макроси, странична лента с устройства,
+ * връзка с main през `window.api` (preload bridge). Не импортира Node модули.
+ */
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+
 import type {
   AppSettings,
   Device,
   DeviceInput,
   HistoryEntry,
+  HttpMethod,
   Macro,
   MacroFolder,
   MacroInput,
@@ -11,6 +17,7 @@ import type {
   RequestOptions,
   ResponseData
 } from '@shared/types'
+
 import { AppLoginScreen, AppRegisterScreen } from './components/AppAuthScreens'
 import { AppSidebar } from './components/AppSidebar'
 import { HistoryPanel } from './components/HistoryPanel'
@@ -21,6 +28,9 @@ import { VaultUnlockScreen } from './components/VaultUnlockScreen'
 import { t } from './i18n'
 import { defaultAppSettings } from './lib/appSettings'
 import { THEME_PREF_KEY } from './lib/theme'
+import { vaultErrorMessage } from './lib/vaultUi'
+
+const fallbackMethods: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
 function readStoredTheme(): 'light' | 'dark' {
   try {
@@ -31,11 +41,169 @@ function readStoredTheme(): 'light' | 'dark' {
   }
   return defaultAppSettings().theme
 }
-import { vaultErrorMessage } from './lib/vaultUi'
 
 type TabKey = 'request' | 'history' | 'macros'
 
 type AuthPhase = 'loading' | 'register' | 'login' | 'session'
+
+function tryParseJson(value: string): unknown | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return undefined
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return undefined
+  }
+}
+
+async function sendDirectRequest(input: {
+  method: HttpMethod
+  url: string
+  headersText: string
+  bodyText: string
+  timeoutMs: number
+}): Promise<ResponseData> {
+  const startedAt = Date.now()
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), Math.max(100, input.timeoutMs))
+  try {
+    const parsedHeaders = input.headersText.trim() ? JSON.parse(input.headersText) : {}
+    const headers =
+      parsedHeaders && typeof parsedHeaders === 'object'
+        ? (parsedHeaders as Record<string, string>)
+        : {}
+    const shouldSendBody = !!input.bodyText && !['GET', 'DELETE'].includes(input.method)
+    const response = await fetch(input.url, {
+      method: input.method,
+      headers,
+      body: shouldSendBody ? input.bodyText : undefined,
+      signal: controller.signal
+    })
+    const body = await response.text()
+    const outHeaders: Record<string, string> = {}
+    response.headers.forEach((value, key) => {
+      outHeaders[key] = value
+    })
+    const parsedBody = tryParseJson(body)
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      headers: outHeaders,
+      body,
+      parsedBody,
+      parsedType: parsedBody !== undefined ? 'json' : 'text',
+      durationMs: Date.now() - startedAt
+    }
+  } catch (error) {
+    return {
+      status: 0,
+      statusText: 'ERROR',
+      headers: {},
+      body: '',
+      durationMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : 'Request failed'
+    }
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+function NoBackendRequestScreen() {
+  const [method, setMethod] = useState<HttpMethod>('GET')
+  const [url, setUrl] = useState('http://localhost:8080/')
+  const [headersText, setHeadersText] = useState('{}')
+  const [bodyText, setBodyText] = useState('')
+  const [timeoutMs, setTimeoutMs] = useState('10000')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [response, setResponse] = useState<ResponseData | null>(null)
+
+  const onSend = async () => {
+    setError(null)
+    setResponse(null)
+    const timeout = Number(timeoutMs)
+    if (!Number.isFinite(timeout) || timeout <= 0) {
+      setError('Timeout must be a positive number.')
+      return
+    }
+    try {
+      if (headersText.trim()) JSON.parse(headersText)
+    } catch {
+      setError('Headers must be valid JSON object.')
+      return
+    }
+    setSending(true)
+    const res = await sendDirectRequest({
+      method,
+      url: url.trim(),
+      headersText,
+      bodyText,
+      timeoutMs: timeout
+    })
+    setResponse(res)
+    setSending(false)
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-4 bg-slate-50 p-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+        Backend bridge is not available. Using direct browser request mode.
+      </div>
+      <div className="grid grid-cols-[100px_1fr] gap-2 text-sm">
+        <select
+          className="rounded border border-slate-200 px-2 py-1 dark:border-slate-600 dark:bg-slate-800"
+          value={method}
+          onChange={(e) => setMethod(e.target.value as HttpMethod)}
+        >
+          {fallbackMethods.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <input
+          className="rounded border border-slate-200 px-2 py-1 dark:border-slate-600 dark:bg-slate-800"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://example.com/api"
+        />
+      </div>
+      <textarea
+        className="min-h-[100px] rounded border border-slate-200 px-2 py-1 font-mono text-xs dark:border-slate-600 dark:bg-slate-800"
+        value={headersText}
+        onChange={(e) => setHeadersText(e.target.value)}
+      />
+      <textarea
+        className="min-h-[140px] rounded border border-slate-200 px-2 py-1 font-mono text-xs dark:border-slate-600 dark:bg-slate-800"
+        value={bodyText}
+        onChange={(e) => setBodyText(e.target.value)}
+      />
+      <div className="flex items-center gap-2">
+        <input
+          className="w-44 rounded border border-slate-200 px-2 py-1 dark:border-slate-600 dark:bg-slate-800"
+          value={timeoutMs}
+          onChange={(e) => setTimeoutMs(e.target.value)}
+          placeholder="Timeout (ms)"
+        />
+        <button
+          type="button"
+          className="rounded bg-emerald-500 px-3 py-1 text-sm font-semibold text-white hover:bg-emerald-600"
+          disabled={sending}
+          onClick={() => void onSend()}
+        >
+          {sending ? 'Sending...' : 'Send'}
+        </button>
+      </div>
+      {error && <div className="text-sm text-rose-600 dark:text-rose-400">{error}</div>}
+      {response && (
+        <pre className="min-h-[160px] overflow-auto rounded border border-slate-200 bg-white p-3 text-xs dark:border-slate-700 dark:bg-slate-900">
+          {JSON.stringify(response, null, 2)}
+        </pre>
+      )}
+    </div>
+  )
+}
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([])
@@ -437,17 +605,7 @@ export default function App() {
   )
 
   if (!window.api) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <div className="rounded border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-800 dark:bg-rose-950/40">
-          <h1 className="text-lg font-semibold text-rose-700 dark:text-rose-300">Грешка при зареждане</h1>
-          <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">
-            window.api не е наличен. Проверете дали preload скриптът е зареден правилно.
-          </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Моля, рестартирайте приложението.</p>
-        </div>
-      </div>
-    )
+    return <NoBackendRequestScreen />
   }
 
   if (authPhase === 'loading') {

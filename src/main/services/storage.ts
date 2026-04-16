@@ -1,14 +1,19 @@
+/** Пътища към userData и интеграция с Electron при запис на файлове. */
 import { app } from 'electron'
 import { existsSync, promises as fs } from 'fs'
 import path from 'path'
+
 import type { AppSettings, Store } from '../../shared/types'
+/** Шифроване на полета за автентикация чрез OS safeStorage преди JSON на диска. */
 import { deserializeAuthFromDisk, serializeAuthForDisk } from './authSecrets'
+/** AES-GCM обвивка за целия store (vault файл) и derive от парола. */
 import {
   decryptPayloadWithKey,
   encryptPayloadWithKey,
   sealWithNewPassword,
   tryOpenWithPassword
 } from './vaultCrypto'
+/** Гейт преди достъп до store: приложната сесия трябва да е отключена. */
 import { isAppSessionUnlocked } from './appAuth'
 
 const STORE_VERSION = 3

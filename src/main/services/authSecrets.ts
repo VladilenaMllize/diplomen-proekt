@@ -1,4 +1,6 @@
+/** OS-backed шифроване на кратки тайни (парола, токен, API ключ) за сериализация на диск. */
 import { safeStorage } from 'electron'
+
 import type { AuthConfig } from '../../shared/types'
 
 function encrypt(plain: string): string {

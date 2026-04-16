@@ -1,4 +1,5 @@
 import type { Device, DeviceStatus } from '../../shared/types'
+/** Същият URL/HTTP стек като ръчните заявки — единна автентикация и таймаути. */
 import { buildRequestHeaders, buildUrl, sendHttpRequest } from './httpClient'
 
 const DEFAULT_TIMEOUT_MS = 5000

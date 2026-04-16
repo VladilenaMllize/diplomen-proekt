@@ -1,6 +1,9 @@
 import type { ResponseData } from '../../shared/types'
 
-/** App-wide {{name}}; leaves {{stepN...}} for macro step substitution. */
+/**
+ * Шаблони за макроси (само типове от shared; без IO).
+ * App-wide `{{name}}`; оставя `{{stepN...}}` за подстановка от стъпки.
+ */
 export function substituteGlobals(text: string, globals: Record<string, string>): string {
   return text.replace(/\{\{([^}]+)\}\}/g, (_m, inner: string) => {
     const key = inner.trim()

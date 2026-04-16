@@ -1,3 +1,4 @@
+/** Персистентен файл под userData за локален акаунт (не се бърка с vault store). */
 import { app } from 'electron'
 import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import { existsSync, promises as fs } from 'fs'

@@ -1,3 +1,4 @@
+/** Нисък ниво крипто: scrypt + AES-256-GCM за vault файла (без Electron API тук). */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto'
 
 const SCRYPT_OPTS = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const
